@@ -1,0 +1,28 @@
+{
+  "name": "@w3kits/plugin-file-explorer",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "W3Kits desktop File Explorer plugin.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -p tsconfig.json && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "@w3kits/sdk": "0.1.0",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "vite": "^8.0.13"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.25",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6"
+  }
+}

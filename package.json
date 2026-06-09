@@ -6,9 +6,9 @@
   "description": "W3Kits desktop File Explorer plugin.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "node scripts/install-w3kits-sdk.mjs && tsc -p tsconfig.json && vite build",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "node scripts/install-w3kits-sdk.mjs && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.1",

@@ -11,7 +11,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import * as w3kits from "@w3kits/sdk/client";
+import * as appkits from "@appkits-ai/sdk/client";
 import {
   HOME_ROOT,
   buildDirectoryTree,
@@ -59,7 +59,7 @@ function App() {
   const tree = React.useMemo(() => buildDirectoryTree(entries), [entries]);
 
   const refresh = React.useCallback(async () => {
-    const result = await w3kits.FileSystem.list(HOME_ROOT);
+    const result = await appkits.FileSystem.list(HOME_ROOT);
     const nextEntries = result.entries.map((entry) => ({
       path: normalizePath(entry.path),
       name: entry.name || filenameFromPath(entry.path),
@@ -73,16 +73,16 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    void w3kits.Window.setTitle("File Explorer");
-    void w3kits.Launch.params().then((params) =>
+    void appkits.Window.setTitle("File Explorer");
+    void appkits.Launch.params().then((params) =>
       setCurrentPath(pathFromLaunchParams(params)),
     );
     void refresh();
-    const offLaunch = w3kits.Launch.onChange((params) => {
+    const offLaunch = appkits.Launch.onChange((params) => {
       setCurrentPath(pathFromLaunchParams(params));
       setSelected([]);
     });
-    const offContext = w3kits.ContextMenu.onSelect((itemId) => {
+    const offContext = appkits.ContextMenu.onSelect((itemId) => {
       if (itemId === "open") openSelected();
       if (itemId === "rename") startRename(selectedEntries[0]);
       if (itemId === "delete") void deleteSelected();
@@ -100,7 +100,7 @@ function App() {
       setPreview("");
       return;
     }
-    void w3kits.FileSystem.read(entry.path)
+    void appkits.FileSystem.read(entry.path)
       .then((file) => setPreview(file.body || ""))
       .catch(() => setPreview(""));
   }, [selectedEntries]);
@@ -130,7 +130,7 @@ function App() {
       setSelected([]);
       return;
     }
-    void w3kits.FileSystem.read(entry.path).then((file) => {
+    void appkits.FileSystem.read(entry.path).then((file) => {
       setPreview(file.body || "");
     });
   }
@@ -142,14 +142,14 @@ function App() {
 
   async function createFolder() {
     const path = uniquePath(entries, currentPath, "New Folder");
-    await w3kits.FileSystem.mkdir(path);
+    await appkits.FileSystem.mkdir(path);
     await refresh();
     setSelected([path]);
   }
 
   async function createTextFile() {
     const path = uniquePath(entries, currentPath, "Untitled.txt");
-    await w3kits.FileSystem.write({
+    await appkits.FileSystem.write({
       path,
       body: "",
       contentType: "text/plain;charset=UTF-8",
@@ -171,18 +171,18 @@ function App() {
     setRenamingPath(null);
     if (!commit || !entry || !nextName || nextName === entry.name) return;
     const target = `${parentPath(entry.path)}/${nextName}`;
-    await w3kits.FileSystem.move(entry.path, target);
+    await appkits.FileSystem.move(entry.path, target);
     await refresh();
     setSelected([target]);
   }
 
   async function deleteSelected() {
     for (const entry of selectedEntries) {
-      await w3kits.FileSystem.delete(entry.path);
+      await appkits.FileSystem.delete(entry.path);
     }
     setSelected([]);
     await refresh();
-    void w3kits.Notification.show({
+    void appkits.Notification.show({
       title: selectedEntries.length === 1 ? "Item deleted" : "Items deleted",
       variant: "success",
     });
@@ -199,7 +199,7 @@ function App() {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
-    await w3kits.FileSystem.write({
+    await appkits.FileSystem.write({
       path: targetPath,
       bodyBase64: btoa(binary),
       contentType: file.type || "application/octet-stream",
@@ -226,7 +226,7 @@ function App() {
     setSelected((current) =>
       current.includes(entry.path) ? current : [entry.path],
     );
-    void w3kits.ContextMenu.open({
+    void appkits.ContextMenu.open({
       x: event.clientX,
       y: event.clientY,
       items: [

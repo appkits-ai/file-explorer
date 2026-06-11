@@ -46,7 +46,7 @@ describe("file explorer model", () => {
   it("reads launched folder params", () => {
     expect(
       pathFromLaunchParams({
-        w3kitsOpenFolder: { path: "/home/agent/project" },
+        appkitsOpenFolder: { path: "/home/agent/project" },
       }),
     ).toBe("/home/agent/project");
   });

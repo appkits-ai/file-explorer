@@ -109,7 +109,7 @@ export function uniquePath(
 }
 
 export function pathFromLaunchParams(params: Record<string, unknown>): string {
-  const folder = params.w3kitsOpenFolder;
+  const folder = params.appkitsOpenFolder;
   if (folder && typeof folder === "object") {
     const path = (folder as Record<string, unknown>).path;
     if (typeof path === "string") return normalizePath(path);

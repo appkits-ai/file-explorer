@@ -34,4 +34,14 @@ describe("File Explorer mobile menu contracts", () => {
     expect(styles).toContain(".toolbar button {\n    width: 40px;\n    height: 40px;");
     expect(styles).toContain(".statusbar {\n    min-height: 38px;");
   });
+
+  it("uses the earlier light file manager surface", () => {
+    const styles = readSource("src/styles.css");
+
+    expect(styles).toContain("color-scheme: light;");
+    expect(styles).toContain("background: #ffffff;");
+    expect(styles).toContain(".tree,\n.details {\n  overflow: auto;\n  background: #f8fafc;");
+    expect(styles).not.toContain("color-scheme: dark;");
+    expect(styles).not.toContain("background: #0f1115;");
+  });
 });

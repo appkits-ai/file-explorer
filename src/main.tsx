@@ -28,10 +28,24 @@ import "./styles.css";
 
 type ViewMode = "list" | "tiles";
 
+type ClipboardMode = "copy" | "cut";
+
+interface HostContextMenuItem {
+  id: string;
+  label: string;
+  destructive?: boolean;
+}
+
+interface ExplorerClipboard {
+  mode: ClipboardMode;
+  entries: ExplorerEntry[];
+}
+
 interface PendingUpload {
   file: File;
   targetPath: string;
   conflict: boolean;
+  remaining: File[];
 }
 
 function App() {
@@ -41,8 +55,14 @@ function App() {
   const [viewMode, setViewMode] = React.useState<ViewMode>("list");
   const [search, setSearch] = React.useState("");
   const [preview, setPreview] = React.useState<string>("");
+  const [pathValue, setPathValue] = React.useState(HOME_ROOT);
+  const [editingPath, setEditingPath] = React.useState(false);
   const [renamingPath, setRenamingPath] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
+  const [clipboard, setClipboard] = React.useState<ExplorerClipboard | null>(
+    null,
+  );
+  const [draggingFiles, setDraggingFiles] = React.useState(false);
   const [pendingUpload, setPendingUpload] = React.useState<PendingUpload | null>(
     null,
   );
@@ -57,6 +77,10 @@ function App() {
     [currentPath, entries, search],
   );
   const tree = React.useMemo(() => buildDirectoryTree(entries), [entries]);
+
+  React.useEffect(() => {
+    setPathValue(currentPath);
+  }, [currentPath]);
 
   const refresh = React.useCallback(async () => {
     const result = await appkits.FileSystem.list(HOME_ROOT);
@@ -84,7 +108,13 @@ function App() {
     });
     const offContext = appkits.ContextMenu.onSelect((itemId) => {
       if (itemId === "open") openSelected();
+      if (itemId === "new-folder") void createFolder();
+      if (itemId === "new-text-file") void createTextFile();
+      if (itemId === "upload") uploadRef.current?.click();
       if (itemId === "rename") startRename(selectedEntries[0]);
+      if (itemId === "copy") copySelection("copy");
+      if (itemId === "cut") copySelection("cut");
+      if (itemId === "paste") void pasteClipboard();
       if (itemId === "delete") void deleteSelected();
       if (itemId === "copy-path") void copySelectedPaths();
     });
@@ -133,6 +163,18 @@ function App() {
     void appkits.FileSystem.read(entry.path).then((file) => {
       setPreview(file.body || "");
     });
+  }
+
+  function commitPathEdit(commit: boolean) {
+    setEditingPath(false);
+    if (!commit) {
+      setPathValue(currentPath);
+      return;
+    }
+    const nextPath = normalizePath(pathValue);
+    setCurrentPath(nextPath);
+    setSelected([]);
+    setSearch("");
   }
 
   function openSelected() {
@@ -192,7 +234,70 @@ function App() {
     await navigator.clipboard.writeText(selectedEntries.map((entry) => entry.path).join("\n"));
   }
 
-  async function handleUpload(file: File, replace = false) {
+  function copySelection(mode: ClipboardMode) {
+    if (selectedEntries.length === 0) return;
+    setClipboard({ mode, entries: selectedEntries });
+    void appkits.Notification.show({
+      title: mode === "cut" ? "Ready to move" : "Ready to copy",
+      body:
+        selectedEntries.length === 1
+          ? selectedEntries[0].name
+          : `${selectedEntries.length} items`,
+    });
+  }
+
+  async function copyEntryToDirectory(entry: ExplorerEntry, directory: string) {
+    const targetRoot = uniquePath(entries, directory, entry.name);
+    if (entry.kind === "directory") {
+      await appkits.FileSystem.mkdir(targetRoot);
+      const children = entries.filter(
+        (item) => item.path.startsWith(`${entry.path}/`) && item.path !== entry.path,
+      );
+      for (const child of children) {
+        const relative = child.path.slice(entry.path.length + 1);
+        const targetPath = `${targetRoot}/${relative}`;
+        if (child.kind === "directory") {
+          await appkits.FileSystem.mkdir(targetPath);
+        } else {
+          const file = await appkits.FileSystem.read(child.path);
+          await appkits.FileSystem.write({
+            path: targetPath,
+            body: file.body,
+            bodyBase64: file.bodyBase64,
+            contentType: file.contentType || child.contentType,
+          });
+        }
+      }
+      return targetRoot;
+    }
+    const file = await appkits.FileSystem.read(entry.path);
+    await appkits.FileSystem.write({
+      path: targetRoot,
+      body: file.body,
+      bodyBase64: file.bodyBase64,
+      contentType: file.contentType || entry.contentType,
+    });
+    return targetRoot;
+  }
+
+  async function pasteClipboard(targetDirectory = currentPath) {
+    if (!clipboard || clipboard.entries.length === 0) return;
+    const pasted: string[] = [];
+    for (const entry of clipboard.entries) {
+      if (clipboard.mode === "cut") {
+        const target = uniquePath(entries, targetDirectory, entry.name);
+        await appkits.FileSystem.move(entry.path, target);
+        pasted.push(target);
+      } else {
+        pasted.push(await copyEntryToDirectory(entry, targetDirectory));
+      }
+    }
+    if (clipboard.mode === "cut") setClipboard(null);
+    await refresh();
+    setSelected(pasted);
+  }
+
+  async function handleUpload(file: File, replace = false, remaining: File[] = []) {
     const targetPath = replace
       ? pendingUpload?.targetPath || `${currentPath}/${file.name}`
       : uniquePath(entries, currentPath, file.name);
@@ -207,18 +312,45 @@ function App() {
     setPendingUpload(null);
     await refresh();
     setSelected([targetPath]);
+    if (remaining.length > 0) void uploadFiles(remaining);
   }
 
-  function chooseUpload(files: FileList | null) {
-    const file = files?.[0];
+  async function uploadFiles(files: File[]) {
+    const [file, ...remaining] = files;
     if (!file) return;
     const targetPath = `${currentPath}/${file.name}`;
     const conflict = entries.some((entry) => entry.path === targetPath);
     if (conflict) {
-      setPendingUpload({ file, targetPath, conflict });
+      setPendingUpload({ file, targetPath, conflict, remaining });
       return;
     }
-    void handleUpload(file);
+    await handleUpload(file, false, remaining);
+  }
+
+  function chooseUpload(files: FileList | null) {
+    const nextFiles = Array.from(files || []);
+    if (nextFiles.length === 0) return;
+    void uploadFiles(nextFiles);
+  }
+
+  function contextMenuItems(entry?: ExplorerEntry): HostContextMenuItem[] {
+    if (entry) {
+      return [
+        { id: "open", label: "Open" },
+        { id: "rename", label: "Rename" },
+        { id: "copy", label: "Copy" },
+        { id: "cut", label: "Cut" },
+        ...(clipboard ? [{ id: "paste", label: "Paste" }] : []),
+        { id: "copy-path", label: "Copy Path" },
+        { id: "delete", label: "Delete", destructive: true },
+      ];
+    }
+    return [
+      { id: "new-folder", label: "New Folder" },
+      { id: "new-text-file", label: "New Text File" },
+      { id: "upload", label: "Upload Files" },
+      ...(clipboard ? [{ id: "paste", label: "Paste" }] : []),
+    ];
   }
 
   function showHostContextMenu(entry: ExplorerEntry, event: React.MouseEvent) {
@@ -229,19 +361,40 @@ function App() {
     void appkits.ContextMenu.open({
       x: event.clientX,
       y: event.clientY,
-      items: [
-        { id: "open", label: "Open" },
-        { id: "rename", label: "Rename" },
-        { id: "copy-path", label: "Copy Path" },
-        { id: "delete", label: "Delete", destructive: true },
-      ],
+      items: contextMenuItems(entry),
     });
+  }
+
+  function showBackgroundContextMenu(event: React.MouseEvent) {
+    event.preventDefault();
+    setSelected([]);
+    void appkits.ContextMenu.open({
+      x: event.clientX,
+      y: event.clientY,
+      items: contextMenuItems(),
+    });
+  }
+
+  function handleDrop(event: React.DragEvent) {
+    event.preventDefault();
+    setDraggingFiles(false);
+    chooseUpload(event.dataTransfer.files);
   }
 
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Enter") openSelected();
     if (event.key === "F2") startRename(selectedEntries[0]);
     if (event.key === "Delete") void deleteSelected();
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
+      copySelection("copy");
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "x") {
+      copySelection("cut");
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v") {
+      event.preventDefault();
+      void pasteClipboard();
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
       event.preventDefault();
       setSelected(visibleEntries.map((entry) => entry.path));
@@ -300,32 +453,68 @@ function App() {
         <input
           ref={uploadRef}
           type="file"
+          multiple
           hidden
           onChange={(event) => chooseUpload(event.target.files)}
         />
       </header>
       <nav className="breadcrumb">
-        {currentPath
-          .replace(HOME_ROOT, "Home")
-          .split("/")
-          .filter(Boolean)
-          .map((part, index, parts) => (
-            <button
-              key={`${part}-${index}`}
-              onClick={() => {
-                if (index === 0) setCurrentPath(HOME_ROOT);
-                else setCurrentPath(`${HOME_ROOT}/${parts.slice(1, index + 1).join("/")}`);
-              }}
-            >
-              {part}
+        {editingPath ? (
+          <input
+            autoFocus
+            className="path-input"
+            value={pathValue}
+            onChange={(event) => setPathValue(event.target.value)}
+            onBlur={() => commitPathEdit(true)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitPathEdit(true);
+              if (event.key === "Escape") commitPathEdit(false);
+            }}
+          />
+        ) : (
+          <>
+            {currentPath
+              .replace(HOME_ROOT, "Home")
+              .split("/")
+              .filter(Boolean)
+              .map((part, index, parts) => (
+                <button
+                  key={`${part}-${index}`}
+                  onClick={() => {
+                    if (index === 0) setCurrentPath(HOME_ROOT);
+                    else setCurrentPath(`${HOME_ROOT}/${parts.slice(1, index + 1).join("/")}`);
+                  }}
+                >
+                  {part}
+                </button>
+              ))}
+            <button className="path-edit" onClick={() => setEditingPath(true)}>
+              Edit path
             </button>
-          ))}
+          </>
+        )}
       </nav>
       <section className="workspace">
         <aside className="tree">
           <Tree node={tree} currentPath={currentPath} onOpen={setCurrentPath} />
         </aside>
-        <section className={`files ${viewMode}`}>
+        <section
+          className={`files ${viewMode}`}
+          data-dragging={draggingFiles}
+          onContextMenu={showBackgroundContextMenu}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDraggingFiles(true);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={(event) => {
+            if (event.currentTarget === event.target) setDraggingFiles(false);
+          }}
+          onDrop={handleDrop}
+        >
+          {draggingFiles ? (
+            <div className="drop-hint">Drop files to upload to this folder</div>
+          ) : null}
           {visibleEntries.map((entry) => (
             <button
               key={entry.path}
@@ -333,7 +522,10 @@ function App() {
               data-selected={selected.includes(entry.path)}
               onClick={(event) => selectEntry(entry, event)}
               onDoubleClick={() => openEntry(entry)}
-              onContextMenu={(event) => showHostContextMenu(entry, event)}
+              onContextMenu={(event) => {
+                event.stopPropagation();
+                showHostContextMenu(entry, event);
+              }}
             >
               <span className="file-icon">{entry.kind === "directory" ? "DIR" : "FILE"}</span>
               {renamingPath === entry.path ? (
@@ -380,7 +572,7 @@ function App() {
             <button onClick={() => handleUpload(pendingUpload.file, true)}>
               Replace
             </button>
-            <button onClick={() => handleUpload(pendingUpload.file, false)}>
+            <button onClick={() => handleUpload(pendingUpload.file, false, pendingUpload.remaining)}>
               Keep both
             </button>
             <button onClick={() => setPendingUpload(null)}>Cancel</button>

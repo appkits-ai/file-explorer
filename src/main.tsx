@@ -38,7 +38,9 @@ import {
   rectsIntersect,
   sanitizeFilename,
   searchEntries,
+  selectedPathFromLaunchParams,
   uniquePath,
+  uploadTargets,
   visiblePath,
   type ExplorerEntry,
   type SelectionRect,
@@ -104,6 +106,7 @@ function App() {
   const selectedPathsRef = React.useRef<string[]>([]);
   const entriesRef = React.useRef<ExplorerEntry[]>([]);
   const currentPathRef = React.useRef(currentPath);
+  const pendingLaunchSelectionRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     selectedPathsRef.current = selectedPaths;
@@ -128,10 +131,22 @@ function App() {
       size: entry.size,
       local: entry.local,
       temporary: entry.temporary,
-      updatedAt: new Date().toISOString(),
+      updatedAt:
+        "updatedAt" in entry && typeof entry.updatedAt === "string"
+          ? entry.updatedAt
+          : new Date().toISOString(),
     }));
     setEntries(nextEntries);
-    setSelectedPaths((current) => current.filter((path) => nextEntries.some((entry) => entry.path === path)));
+    const launchSelection = pendingLaunchSelectionRef.current;
+    if (launchSelection && nextEntries.some((entry) => entry.path === launchSelection)) {
+      setSelectedPaths([launchSelection]);
+      setActivePath(launchSelection);
+      pendingLaunchSelectionRef.current = null;
+    } else {
+      setSelectedPaths((current) =>
+        current.filter((path) => nextEntries.some((entry) => entry.path === path)),
+      );
+    }
     setStatus(`${nextEntries.length} items indexed`);
   }, []);
 
@@ -139,9 +154,11 @@ function App() {
     void appkits.Window.setTitle("File Explorer");
     void appkits.Launch.params().then((params) => {
       const next = pathFromLaunchParams(params);
+      pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
       setCurrentPath(next);
     });
     const offLaunch = appkits.Launch.onChange((params) => {
+      pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
       setCurrentPath(pathFromLaunchParams(params));
       setSelectedPaths([]);
       setActivePath(null);
@@ -388,9 +405,14 @@ function App() {
   }
 
   async function uploadFiles(files: File[], targetDirectory = currentPathRef.current, replace = false) {
-    for (const file of files) {
-      const cleanName = sanitizeFilename(file.name) || "upload.bin";
-      const target = replace ? joinPath(targetDirectory, cleanName) : uniquePath(entriesRef.current, targetDirectory, cleanName);
+    const targets = uploadTargets(
+      entriesRef.current,
+      targetDirectory,
+      files.map((file) => file.name),
+      replace,
+    );
+    for (const [index, file] of files.entries()) {
+      const target = targets[index]?.path || joinPath(targetDirectory, sanitizeFilename(file.name) || "upload.bin");
       await appkits.FileSystem.write({
         path: target,
         bodyBase64: await fileToBase64(file),
@@ -404,10 +426,14 @@ function App() {
 
   function prepareUpload(files: File[], targetDirectory = currentPathRef.current) {
     if (files.length === 0) return;
-    const existing = new Set(entriesRef.current.map((entry) => entry.path));
-    const conflicts = files
-      .map((file) => joinPath(targetDirectory, sanitizeFilename(file.name) || "upload.bin"))
-      .filter((path) => existing.has(path));
+    const conflicts = uploadTargets(
+      entriesRef.current,
+      targetDirectory,
+      files.map((file) => file.name),
+      true,
+    )
+      .filter((target) => target.conflict)
+      .map((target) => target.path);
     if (conflicts.length > 0) {
       setPendingUpload({ items: files, targetDirectory, conflicts });
       return;

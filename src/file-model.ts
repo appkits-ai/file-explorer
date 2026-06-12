@@ -11,6 +11,12 @@ export interface ExplorerEntry {
   temporary?: boolean;
 }
 
+export interface UploadTarget {
+  sourceName: string;
+  path: string;
+  conflict: boolean;
+}
+
 export interface TreeNode {
   path: string;
   name: string;
@@ -159,6 +165,27 @@ export function uniquePath(
   return candidate;
 }
 
+export function uploadTargets(
+  entries: ExplorerEntry[],
+  directory: string,
+  filenames: string[],
+  replace: boolean,
+): UploadTarget[] {
+  const existing = new Set(entries.map((entry) => entry.path.toLowerCase()));
+  const allocated: ExplorerEntry[] = [];
+  return filenames.map((filename) => {
+    const cleanName = sanitizeFilename(filename) || "upload.bin";
+    const directPath = joinPath(directory, cleanName);
+    const conflict = existing.has(directPath.toLowerCase());
+    if (replace) {
+      return { sourceName: filename, path: directPath, conflict };
+    }
+    const candidate = uniquePath([...entries, ...allocated], directory, cleanName);
+    allocated.push({ path: candidate, name: filename, kind: "file" });
+    return { sourceName: filename, path: candidate, conflict };
+  });
+}
+
 export function sanitizeFilename(filename: string): string {
   return filename
     .replace(/[\u0000-\u001f]/g, "")
@@ -213,4 +240,15 @@ export function pathFromLaunchParams(params: Record<string, unknown>): string {
     if (typeof path === "string") return parentPath(path);
   }
   return HOME_ROOT;
+}
+
+export function selectedPathFromLaunchParams(
+  params: Record<string, unknown>,
+): string | null {
+  const file = params.appkitsOpenFile;
+  if (file && typeof file === "object") {
+    const path = (file as Record<string, unknown>).path;
+    if (typeof path === "string") return normalizePath(path);
+  }
+  return null;
 }

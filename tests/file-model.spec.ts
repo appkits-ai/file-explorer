@@ -9,7 +9,9 @@ import {
   pathFromVisiblePath,
   sanitizeFilename,
   searchEntries,
+  selectedPathFromLaunchParams,
   uniquePath,
+  uploadTargets,
   visiblePath,
   type ExplorerEntry,
 } from "../src/file-model";
@@ -56,6 +58,18 @@ describe("file explorer model", () => {
     ).toBe("/home/agent/project");
   });
 
+  it("selects a launched file while opening its containing folder", () => {
+    const params = {
+      appkitsOpenFile: {
+        scope: "desktop-file",
+        path: "/home/agent/project/a.txt",
+        name: "a.txt",
+      },
+    };
+    expect(pathFromLaunchParams(params)).toBe("/home/agent/project");
+    expect(selectedPathFromLaunchParams(params)).toBe("/home/agent/project/a.txt");
+  });
+
   it("maps visible breadcrumb paths back to desktop paths", () => {
     expect(visiblePath("/home/agent/project/src")).toBe("Home/project/src");
     expect(pathFromVisiblePath("Home/project/src")).toBe(
@@ -70,6 +84,24 @@ describe("file explorer model", () => {
 
   it("sanitizes unsafe file names for create, upload, and rename", () => {
     expect(sanitizeFilename(" ../bad/name.txt\0 ")).toBe("..-bad-name.txt");
+  });
+
+  it("plans upload targets without colliding duplicate batch names", () => {
+    expect(
+      uploadTargets(entries, HOME_ROOT, ["readme.md", "readme.md"], false).map(
+        (target) => target.path,
+      ),
+    ).toEqual(["/home/agent/readme 2.md", "/home/agent/readme 3.md"]);
+  });
+
+  it("reports upload conflicts for overwrite confirmation", () => {
+    expect(uploadTargets(entries, HOME_ROOT, ["readme.md"], true)).toEqual([
+      {
+        sourceName: "readme.md",
+        path: "/home/agent/readme.md",
+        conflict: true,
+      },
+    ]);
   });
 
   it("labels common file types for details and menus", () => {

@@ -1,10 +1,95 @@
 :root {
   color-scheme: light;
+  --app-surface: #ffffff;
+  --app-panel: #f8fafc;
+  --app-panel-strong: #ffffff;
+  --app-text: #111827;
+  --app-muted: #475569;
+  --app-subtle: #64748b;
+  --app-border: #d1d5db;
+  --app-border-soft: #e5e7eb;
+  --app-hover: #f1f5f9;
+  --app-accent: #1d4ed8;
+  --app-accent-soft: #dbeafe;
+  --app-focus: #38bdf8;
+  --app-selection-outline: #60a5fa;
+  --app-danger: #be123c;
+  --app-danger-soft: #ffe4e6;
+  --app-overlay: rgba(15, 23, 42, 0.22);
+  --app-overlay-accent: rgba(14, 165, 233, 0.1);
+  --app-selection: rgba(14, 165, 233, 0.13);
+  --app-shadow-soft: rgba(15, 23, 42, 0.04);
+  --app-shadow-menu: rgba(15, 23, 42, 0.18);
+  --app-shadow-dialog: rgba(15, 23, 42, 0.22);
+  --icon-folder: #f59e0b;
+  --icon-file: #64748b;
+  --icon-code: #0284c7;
+  --icon-image: #16a34a;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  background: #ffffff;
-  color: #111827;
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+
+:root[data-appkits-theme="dark"] {
+  color-scheme: dark;
+  --app-surface: #0f1115;
+  --app-panel: #12141a;
+  --app-panel-strong: #181b22;
+  --app-text: #f4f4f5;
+  --app-muted: #d4d4d8;
+  --app-subtle: #a1a1aa;
+  --app-border: rgba(255, 255, 255, 0.12);
+  --app-border-soft: rgba(255, 255, 255, 0.08);
+  --app-hover: rgba(255, 255, 255, 0.08);
+  --app-accent: #93c5fd;
+  --app-accent-soft: rgba(59, 130, 246, 0.24);
+  --app-focus: #7dd3fc;
+  --app-selection-outline: rgba(125, 211, 252, 0.4);
+  --app-danger: #fecdd3;
+  --app-danger-soft: rgba(244, 63, 94, 0.12);
+  --app-overlay: rgba(2, 6, 23, 0.58);
+  --app-overlay-accent: rgba(14, 165, 233, 0.13);
+  --app-selection: rgba(125, 211, 252, 0.13);
+  --app-shadow-soft: rgba(0, 0, 0, 0.16);
+  --app-shadow-menu: rgba(0, 0, 0, 0.36);
+  --app-shadow-dialog: rgba(0, 0, 0, 0.42);
+  --icon-folder: #facc15;
+  --icon-file: #e5e7eb;
+  --icon-code: #7dd3fc;
+  --icon-image: #86efac;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appkits-theme]) {
+    color-scheme: dark;
+    --app-surface: #0f1115;
+    --app-panel: #12141a;
+    --app-panel-strong: #181b22;
+    --app-text: #f4f4f5;
+    --app-muted: #d4d4d8;
+    --app-subtle: #a1a1aa;
+    --app-border: rgba(255, 255, 255, 0.12);
+    --app-border-soft: rgba(255, 255, 255, 0.08);
+    --app-hover: rgba(255, 255, 255, 0.08);
+    --app-accent: #93c5fd;
+    --app-accent-soft: rgba(59, 130, 246, 0.24);
+    --app-focus: #7dd3fc;
+    --app-selection-outline: rgba(125, 211, 252, 0.4);
+    --app-danger: #fecdd3;
+    --app-danger-soft: rgba(244, 63, 94, 0.12);
+    --app-overlay: rgba(2, 6, 23, 0.58);
+    --app-overlay-accent: rgba(14, 165, 233, 0.13);
+    --app-selection: rgba(125, 211, 252, 0.13);
+    --app-shadow-soft: rgba(0, 0, 0, 0.16);
+    --app-shadow-menu: rgba(0, 0, 0, 0.36);
+    --app-shadow-dialog: rgba(0, 0, 0, 0.42);
+    --icon-folder: #facc15;
+    --icon-file: #e5e7eb;
+    --icon-code: #7dd3fc;
+    --icon-image: #86efac;
+  }
 }
 
 * {
@@ -43,8 +128,8 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #ffffff;
-  color: #111827;
+  background: var(--app-surface);
+  color: var(--app-text);
   outline: none;
 }
 
@@ -54,8 +139,8 @@ button:disabled {
   gap: 6px;
   min-width: 0;
   padding: 6px 8px;
-  border-bottom: 1px solid #d1d5db;
-  background: #f8fafc;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
 }
 
 .toolbar button {
@@ -64,17 +149,17 @@ button:disabled {
   justify-content: center;
   width: 31px;
   height: 31px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: #ffffff;
-  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+  background: var(--app-panel-strong);
+  box-shadow: 0 1px 1px var(--app-shadow-soft);
 }
 
 .toolbar button:hover:not(:disabled),
 .context-menu button:hover:not(:disabled),
 .details-actions button:hover,
 .dialog-actions button:hover {
-  background: #e0f2fe;
+  background: var(--app-hover);
 }
 
 .search {
@@ -85,10 +170,10 @@ button:disabled {
   height: 31px;
   margin-left: auto;
   padding: 0 10px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: #ffffff;
-  color: #64748b;
+  background: var(--app-panel-strong);
+  color: var(--app-subtle);
 }
 
 .search input,
@@ -99,7 +184,7 @@ button:disabled {
   border: 0;
   outline: 0;
   background: transparent;
-  color: #111827;
+  color: var(--app-text);
 }
 
 .breadcrumb {
@@ -109,9 +194,9 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   padding: 4px 8px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #ffffff;
-  color: #475569;
+  border-bottom: 1px solid var(--app-border-soft);
+  background: var(--app-surface);
+  color: var(--app-muted);
 }
 
 .breadcrumb button {
@@ -126,16 +211,16 @@ button:disabled {
 }
 
 .breadcrumb button:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
 }
 
 .breadcrumb input {
   height: 25px;
   padding: 0 7px;
-  border: 1px solid #38bdf8;
+  border: 1px solid var(--app-focus);
   border-radius: 5px;
-  background: #ffffff;
+  background: var(--app-panel-strong);
 }
 
 .workspace {
@@ -156,21 +241,21 @@ button:disabled {
 .tree,
 .details {
   overflow: auto;
-  background: #f8fafc;
+  background: var(--app-panel);
   padding: 12px;
 }
 
 .tree {
-  border-right: 1px solid #e5e7eb;
+  border-right: 1px solid var(--app-border-soft);
 }
 
 .details {
-  border-left: 1px solid #e5e7eb;
+  border-left: 1px solid var(--app-border-soft);
 }
 
 .pane-title {
   margin-bottom: 9px;
-  color: #64748b;
+  color: var(--app-subtle);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -199,8 +284,8 @@ button:disabled {
 
 .tree-node button:hover,
 .tree-node button[data-active="true"] {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
 }
 
 .tree-children {
@@ -211,7 +296,7 @@ button:disabled {
   display: grid;
   grid-template-rows: 32px minmax(0, 1fr);
   overflow: hidden;
-  background: #ffffff;
+  background: var(--app-surface);
 }
 
 .file-header,
@@ -224,9 +309,9 @@ button:disabled {
 
 .file-header {
   padding: 0 14px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f8fafc;
-  color: #64748b;
+  border-bottom: 1px solid var(--app-border-soft);
+  background: var(--app-panel);
+  color: var(--app-subtle);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -251,12 +336,12 @@ button:disabled {
 }
 
 .file-row:hover {
-  background: #f1f5f9;
+  background: var(--app-hover);
 }
 
 .file-row[data-selected="true"] {
-  background: #dbeafe;
-  outline: 1px solid #60a5fa;
+  background: var(--app-accent-soft);
+  outline: 1px solid var(--app-selection-outline);
   outline-offset: -1px;
 }
 
@@ -276,46 +361,46 @@ button:disabled {
 }
 
 .file-meta {
-  color: #64748b;
+  color: var(--app-subtle);
   font-size: 12px;
 }
 
 .file-row input {
   height: 26px;
-  border: 1px solid #38bdf8;
+  border: 1px solid var(--app-focus);
   border-radius: 4px;
   padding: 0 7px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--app-panel-strong);
+  color: var(--app-text);
 }
 
 .empty {
   padding: 32px 16px;
-  color: #64748b;
+  color: var(--app-subtle);
   font-size: 13px;
 }
 
 .selection-rect {
   position: absolute;
   pointer-events: none;
-  border: 1px solid #38bdf8;
-  background: rgba(14, 165, 233, 0.13);
+  border: 1px solid var(--app-focus);
+  background: var(--app-selection);
 }
 
 .icon-folder {
-  color: #f59e0b;
+  color: var(--icon-folder);
 }
 
 .icon-file {
-  color: #64748b;
+  color: var(--icon-file);
 }
 
 .icon-code {
-  color: #0284c7;
+  color: var(--icon-code);
 }
 
 .icon-image {
-  color: #16a34a;
+  color: var(--icon-image);
 }
 
 .details-content {
@@ -339,7 +424,7 @@ button:disabled {
 
 .details p {
   margin: 0;
-  color: #64748b;
+  color: var(--app-subtle);
   font-size: 12px;
 }
 
@@ -350,13 +435,13 @@ button:disabled {
 
 .details dt {
   margin-top: 10px;
-  color: #64748b;
+  color: var(--app-subtle);
 }
 
 .details dd {
   margin: 3px 0 0;
   overflow-wrap: anywhere;
-  color: #111827;
+  color: var(--app-text);
 }
 
 .details-actions {
@@ -368,21 +453,21 @@ button:disabled {
 .details-actions button,
 .dialog-actions button {
   min-height: 30px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 0 10px;
-  background: #ffffff;
+  background: var(--app-panel-strong);
 }
 
 .details pre {
   max-height: 270px;
   overflow: auto;
   margin: 0;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--app-border-soft);
   border-radius: 6px;
   padding: 10px;
-  background: #f8fafc;
-  color: #111827;
+  background: var(--app-panel);
+  color: var(--app-text);
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -397,9 +482,9 @@ button:disabled {
   gap: 12px;
   padding: 0 9px;
   touch-action: manipulation;
-  border-top: 1px solid #d1d5db;
-  background: #f8fafc;
-  color: #475569;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -416,11 +501,11 @@ button:disabled {
   width: 220px;
   max-height: min(360px, calc(100vh - 16px));
   overflow: auto;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--app-border);
   border-radius: 7px;
   padding: 5px;
-  background: #ffffff;
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+  background: var(--app-panel-strong);
+  box-shadow: 0 20px 48px var(--app-shadow-menu);
 }
 
 .context-menu button {
@@ -437,18 +522,18 @@ button:disabled {
 }
 
 .context-menu button[data-destructive="true"] {
-  color: #be123c;
+  color: var(--app-danger);
 }
 
 .context-menu button[data-destructive="true"]:hover:not(:disabled) {
-  background: #ffe4e6;
+  background: var(--app-danger-soft);
 }
 
 .context-menu hr {
   height: 1px;
   margin: 5px 4px;
   border: 0;
-  background: #e5e7eb;
+  background: var(--app-border-soft);
 }
 
 .drop-overlay,
@@ -459,30 +544,30 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.22);
+  background: var(--app-overlay);
 }
 
 .drop-overlay {
   inset: 12px;
-  border: 1px dashed #38bdf8;
+  border: 1px dashed var(--app-focus);
   border-radius: 10px;
-  background: rgba(14, 165, 233, 0.1);
+  background: var(--app-overlay-accent);
   pointer-events: none;
 }
 
 .drop-overlay div {
   display: grid;
   gap: 5px;
-  border: 1px solid #bae6fd;
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   padding: 15px 18px;
-  background: #ffffff;
+  background: var(--app-panel-strong);
   text-align: center;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 12px 32px var(--app-shadow-soft);
 }
 
 .drop-overlay span {
-  color: #475569;
+  color: var(--app-muted);
   font-size: 12px;
 }
 
@@ -490,11 +575,11 @@ button:disabled {
   width: min(430px, calc(100vw - 28px));
   max-height: calc(100vh - 32px);
   overflow: auto;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   padding: 17px;
-  background: #ffffff;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+  background: var(--app-panel-strong);
+  box-shadow: 0 24px 60px var(--app-shadow-dialog);
 }
 
 .dialog h2 {
@@ -504,16 +589,16 @@ button:disabled {
 
 .dialog p {
   margin: 0 0 12px;
-  color: #475569;
+  color: var(--app-muted);
 }
 
 .conflicts {
   max-height: 160px;
   overflow: auto;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--app-border-soft);
   border-radius: 6px;
   padding: 8px;
-  color: #64748b;
+  color: var(--app-subtle);
   font-size: 12px;
 }
 

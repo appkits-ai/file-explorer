@@ -83,6 +83,24 @@ const CONTEXT_MENU_MARGIN = 8;
 const LONG_PRESS_MS = 520;
 const LONG_PRESS_MOVE_LIMIT = 10;
 
+function systemTheme(): "light" | "dark" {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return "light";
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function normalizeTheme(theme: string | undefined): "light" | "dark" {
+  return theme === "dark" || theme === "light" ? theme : systemTheme();
+}
+
+function applyTheme(theme: string | undefined) {
+  if (typeof document === "undefined") return;
+  const normalized = normalizeTheme(theme);
+  document.documentElement.dataset.appkitsTheme = normalized;
+  document.documentElement.style.colorScheme = normalized;
+}
+
 function App() {
   const [entries, setEntries] = React.useState<ExplorerEntry[]>([]);
   const [currentPath, setCurrentPath] = React.useState(HOME_ROOT);
@@ -119,6 +137,12 @@ function App() {
     y: number;
     timeoutId: number;
   } | null>(null);
+
+  React.useEffect(() => {
+    applyTheme(systemTheme());
+    void appkits.Theme.current().then(applyTheme).catch(() => undefined);
+    return appkits.Theme.onChange(applyTheme);
+  }, []);
 
   React.useEffect(() => {
     selectedPathsRef.current = selectedPaths;

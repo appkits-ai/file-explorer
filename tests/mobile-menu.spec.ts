@@ -35,13 +35,15 @@ describe("File Explorer mobile menu contracts", () => {
     expect(styles).toContain(".statusbar {\n    min-height: 38px;");
   });
 
-  it("uses the earlier light file manager surface", () => {
+  it("follows the host theme while preserving the earlier light surface", () => {
     const styles = readSource("src/styles.css");
+    const source = readSource("src/main.tsx");
 
-    expect(styles).toContain("color-scheme: light;");
-    expect(styles).toContain("background: #ffffff;");
-    expect(styles).toContain(".tree,\n.details {\n  overflow: auto;\n  background: #f8fafc;");
-    expect(styles).not.toContain("color-scheme: dark;");
-    expect(styles).not.toContain("background: #0f1115;");
+    expect(source).toContain("appkits.Theme.current()");
+    expect(source).toContain("appkits.Theme.onChange(applyTheme)");
+    expect(source).toContain("document.documentElement.dataset.appkitsTheme");
+    expect(styles).toContain(':root[data-appkits-theme="dark"]');
+    expect(styles).toContain("background: var(--app-surface);");
+    expect(styles).toContain("background: var(--app-panel);");
   });
 });

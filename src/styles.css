@@ -389,8 +389,10 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   min-width: 0;
+  min-height: 26px;
   gap: 12px;
   padding: 0 9px;
+  touch-action: manipulation;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: #12141a;
   color: #a1a1aa;
@@ -407,7 +409,9 @@ button:disabled {
 .context-menu {
   position: fixed;
   z-index: 10000;
-  width: 210px;
+  width: 220px;
+  max-height: min(360px, calc(100vh - 16px));
+  overflow: auto;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 7px;
   padding: 5px;
@@ -523,11 +527,22 @@ button:disabled {
 
 @media (max-width: 780px) {
   .explorer {
-    grid-template-rows: auto 34px minmax(0, 1fr) 26px;
+    grid-template-rows: auto 34px minmax(0, 1fr) 38px;
   }
 
   .toolbar {
     flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .toolbar button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .statusbar {
+    min-height: 38px;
+    font-size: 12px;
   }
 
   .search {

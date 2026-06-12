@@ -3,11 +3,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const CORE_REF = "ac97d8d8bf152b6fbe1c7dcace315f63c4f93b21";
+const CORE_REF = "db7819817f4a8c970bc81df82b61bd8dd12f0a71";
 const sdkInstallRoot = path.resolve("node_modules/@appkits-ai/sdk");
 const sdkClientTypes = path.join(sdkInstallRoot, "dist/client/index.d.ts");
+const sdkPackageJson = path.join(sdkInstallRoot, "package.json");
+const sdkClientProtocol = path.join(sdkInstallRoot, "dist/client/protocol.js");
 
-if (fs.existsSync(sdkClientTypes)) {
+if (installedSdkIsCurrent()) {
   process.exit(0);
 }
 
@@ -25,6 +27,28 @@ fs.mkdirSync(sdkInstallRoot, { recursive: true });
 copyRequiredPackageFile(sourceSdkRoot, "package.json");
 copyRequiredPackageFile(sourceSdkRoot, "dist");
 copyOptionalPackageFile(sourceSdkRoot, "README.md");
+
+if (!installedSdkIsCurrent()) {
+  throw new Error(`appkits_sdk_invalid:${sdkInstallRoot}`);
+}
+
+function installedSdkIsCurrent() {
+  if (!fs.existsSync(sdkClientTypes) || !fs.existsSync(sdkPackageJson)) {
+    return false;
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(sdkPackageJson, "utf8"));
+    if (manifest.name !== "@appkits-ai/sdk") return false;
+    if (typeof manifest.description === "string" && /w3kits/i.test(manifest.description)) return false;
+  } catch {
+    return false;
+  }
+
+  if (!fs.existsSync(sdkClientProtocol)) return false;
+  const protocol = fs.readFileSync(sdkClientProtocol, "utf8");
+  return protocol.includes("APPKITS_DESKTOP_REQUEST") && !protocol.includes("W3KITS_DESKTOP_REQUEST");
+}
 
 function prepareSdkFromCore() {
   const repository =

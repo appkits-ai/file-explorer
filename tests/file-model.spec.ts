@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   HOME_ROOT,
+  breadcrumbSegments,
   buildDirectoryTree,
   childEntries,
+  fileTypeLabel,
   pathFromLaunchParams,
+  pathFromVisiblePath,
+  sanitizeFilename,
   searchEntries,
   uniquePath,
+  visiblePath,
   type ExplorerEntry,
 } from "../src/file-model";
 
@@ -49,5 +54,35 @@ describe("file explorer model", () => {
         appkitsOpenFolder: { path: "/home/agent/project" },
       }),
     ).toBe("/home/agent/project");
+  });
+
+  it("maps visible breadcrumb paths back to desktop paths", () => {
+    expect(visiblePath("/home/agent/project/src")).toBe("Home/project/src");
+    expect(pathFromVisiblePath("Home/project/src")).toBe(
+      "/home/agent/project/src",
+    );
+    expect(breadcrumbSegments("/home/agent/project/src").map((part) => part.label)).toEqual([
+      "Home",
+      "project",
+      "src",
+    ]);
+  });
+
+  it("sanitizes unsafe file names for create, upload, and rename", () => {
+    expect(sanitizeFilename(" ../bad/name.txt\0 ")).toBe("..-bad-name.txt");
+  });
+
+  it("labels common file types for details and menus", () => {
+    expect(fileTypeLabel({ path: "/home/agent/app.ts", name: "app.ts", kind: "file" })).toBe(
+      "Code file",
+    );
+    expect(
+      fileTypeLabel({
+        path: "/home/agent/photo.png",
+        name: "photo.png",
+        kind: "file",
+        contentType: "image/png",
+      }),
+    ).toBe("Image");
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@appkits-ai/plugin-file-explorer",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": false,
   "type": "module",
   "description": "APPKits desktop File Explorer plugin.",

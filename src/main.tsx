@@ -77,6 +77,12 @@ const TEXT_FILE_TYPE: Record<".txt" | ".md" | ".html", string> = {
   ".html": "text/html;charset=UTF-8",
 };
 
+const CONTEXT_MENU_WIDTH = 220;
+const CONTEXT_MENU_MAX_HEIGHT = 360;
+const CONTEXT_MENU_MARGIN = 8;
+const LONG_PRESS_MS = 520;
+const LONG_PRESS_MOVE_LIMIT = 10;
+
 function App() {
   const [entries, setEntries] = React.useState<ExplorerEntry[]>([]);
   const [currentPath, setCurrentPath] = React.useState(HOME_ROOT);
@@ -107,6 +113,12 @@ function App() {
   const entriesRef = React.useRef<ExplorerEntry[]>([]);
   const currentPathRef = React.useRef(currentPath);
   const pendingLaunchSelectionRef = React.useRef<string | null>(null);
+  const longPressRef = React.useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    timeoutId: number;
+  } | null>(null);
 
   React.useEffect(() => {
     selectedPathsRef.current = selectedPaths;
@@ -184,6 +196,10 @@ function App() {
   }, [pathEditing]);
 
   React.useEffect(() => {
+    return () => clearLongPress();
+  }, []);
+
+  React.useEffect(() => {
     if (!contextMenu) return;
     const close = (event: MouseEvent) => {
       if (event.target instanceof HTMLElement && event.target.closest(".context-menu")) return;
@@ -237,6 +253,46 @@ function App() {
       cancelled = true;
     };
   }, [detailsEntry]);
+
+  function openContextMenu(menu: ContextMenuState) {
+    const point = clampContextMenuPoint(menu.x, menu.y);
+    setContextMenu({ ...menu, ...point });
+  }
+
+  function clearLongPress() {
+    const longPress = longPressRef.current;
+    if (!longPress) return;
+    window.clearTimeout(longPress.timeoutId);
+    longPressRef.current = null;
+  }
+
+  function beginLongPress(
+    event: React.PointerEvent,
+    open: (point: { x: number; y: number }) => void,
+  ) {
+    if (event.button !== 0 || event.pointerType === "mouse") return;
+    clearLongPress();
+    const point = { x: event.clientX, y: event.clientY };
+    longPressRef.current = {
+      pointerId: event.pointerId,
+      ...point,
+      timeoutId: window.setTimeout(() => {
+        longPressRef.current = null;
+        open(point);
+      }, LONG_PRESS_MS),
+    };
+  }
+
+  function moveLongPress(event: React.PointerEvent) {
+    const longPress = longPressRef.current;
+    if (!longPress || longPress.pointerId !== event.pointerId) return;
+    if (
+      Math.abs(event.clientX - longPress.x) > LONG_PRESS_MOVE_LIMIT ||
+      Math.abs(event.clientY - longPress.y) > LONG_PRESS_MOVE_LIMIT
+    ) {
+      clearLongPress();
+    }
+  }
 
   function navigate(path: string) {
     setCurrentPath(normalizePath(path));
@@ -660,11 +716,24 @@ function App() {
           <div
             ref={listRef}
             className="files"
-            onPointerDown={startSelection}
+            onPointerDown={(event) => {
+              startSelection(event);
+              if ((event.target as HTMLElement | null)?.closest("[data-explorer-entry='true']")) return;
+              beginLongPress(event, (point) => {
+                openContextMenu({
+                  ...point,
+                  type: selectedCount > 1 ? "selection" : "background",
+                  targetDirectory: pasteTarget,
+                });
+              });
+            }}
+            onPointerMove={moveLongPress}
+            onPointerCancel={clearLongPress}
+            onPointerUp={clearLongPress}
             onContextMenu={(event) => {
               if ((event.target as HTMLElement | null)?.closest("[data-explorer-entry='true']")) return;
               event.preventDefault();
-              setContextMenu({
+              openContextMenu({
                 x: event.clientX,
                 y: event.clientY,
                 type: selectedCount > 1 ? "selection" : "background",
@@ -688,13 +757,30 @@ function App() {
                   draggable
                   onClick={(event) => handleRowClick(event, entry)}
                   onDoubleClick={() => openEntry(entry)}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    beginLongPress(event, (point) => {
+                      const selectedEntriesForMenu = selected && selectedEntries.length > 1 ? selectedEntries : [entry];
+                      setSelectedPaths(selectedEntriesForMenu.map((item) => item.path));
+                      setActivePath(entry.path);
+                      openContextMenu({
+                        ...point,
+                        type: selectedEntriesForMenu.length > 1 ? "selection" : "entry",
+                        targetDirectory: entry.kind === "directory" ? entry.path : currentPath,
+                        entry,
+                      });
+                    });
+                  }}
+                  onPointerMove={moveLongPress}
+                  onPointerCancel={clearLongPress}
+                  onPointerUp={clearLongPress}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     const menuSelection = selected && selectedEntries.length > 1 ? selectedEntries : [entry];
                     setSelectedPaths(menuSelection.map((item) => item.path));
                     setActivePath(entry.path);
-                    setContextMenu({
+                    openContextMenu({
                       x: event.clientX,
                       y: event.clientY,
                       type: menuSelection.length > 1 ? "selection" : "entry",
@@ -785,7 +871,30 @@ function App() {
         </aside>
       </section>
 
-      <footer className="statusbar">
+      <footer
+        className="statusbar"
+        onPointerDown={(event) => {
+          beginLongPress(event, (point) => {
+            openContextMenu({
+              ...point,
+              type: selectedCount > 0 ? "selection" : "background",
+              targetDirectory: pasteTarget,
+            });
+          });
+        }}
+        onPointerMove={moveLongPress}
+        onPointerCancel={clearLongPress}
+        onPointerUp={clearLongPress}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            type: selectedCount > 0 ? "selection" : "background",
+            targetDirectory: pasteTarget,
+          });
+        }}
+      >
         <span>{status}</span>
         <span>{selectedCount > 0 ? `${selectedCount} selected` : visiblePath(currentPath)}</span>
       </footer>
@@ -866,6 +975,20 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
   if (label === "Image") return <FileImage size={size} className="icon-image" />;
   if (label === "Code file" || label === "HTML document") return <FileCode2 size={size} className="icon-code" />;
   return <FileText size={size} className="icon-file" />;
+}
+
+function clampContextMenuPoint(x: number, y: number): { x: number; y: number } {
+  if (typeof window === "undefined") return { x, y };
+  return {
+    x: Math.min(
+      Math.max(CONTEXT_MENU_MARGIN, x),
+      Math.max(CONTEXT_MENU_MARGIN, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN),
+    ),
+    y: Math.min(
+      Math.max(CONTEXT_MENU_MARGIN, y),
+      Math.max(CONTEXT_MENU_MARGIN, window.innerHeight - CONTEXT_MENU_MAX_HEIGHT - CONTEXT_MENU_MARGIN),
+    ),
+  };
 }
 
 function ContextMenu({

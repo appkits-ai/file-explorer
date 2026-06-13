@@ -1,18 +1,18 @@
 {
-  "name": "@w3kits/plugin-file-explorer",
-  "version": "0.1.0",
+  "name": "@appkits-ai/plugin-file-explorer",
+  "version": "0.1.12",
   "private": false,
   "type": "module",
-  "description": "W3Kits desktop File Explorer plugin.",
+  "description": "APPKits desktop File Explorer plugin.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "node scripts/install-w3kits-sdk.mjs && tsc -p tsconfig.json && vite build",
+    "build": "node scripts/install-appkits-sdk.mjs && tsc -p tsconfig.json && vite build",
     "test": "vitest run",
-    "typecheck": "node scripts/install-w3kits-sdk.mjs && tsc -p tsconfig.json --noEmit"
+    "typecheck": "node scripts/install-appkits-sdk.mjs && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.1",
-    "@w3kits/sdk": "0.1.0",
+    "@appkits-ai/sdk": "0.1.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

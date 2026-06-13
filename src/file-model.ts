@@ -6,8 +6,15 @@ export interface ExplorerEntry {
   kind: "file" | "directory";
   contentType?: string;
   size?: number;
+  updatedAt?: string;
   local?: boolean;
   temporary?: boolean;
+}
+
+export interface UploadTarget {
+  sourceName: string;
+  path: string;
+  conflict: boolean;
 }
 
 export type PendingCreateKind = "file" | "directory";
@@ -16,6 +23,25 @@ export interface TreeNode {
   path: string;
   name: string;
   children: TreeNode[];
+}
+
+export interface BreadcrumbSegment {
+  label: string;
+  path: string;
+}
+
+export interface SelectionRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface SelectionState {
+  x: number;
+  y: number;
+  additive: boolean;
+  baseSelection: string[];
 }
 
 export function filenameFromPath(path: string): string {
@@ -31,6 +57,10 @@ export function parentPath(path: string): string {
   return parent.startsWith(HOME_ROOT) ? parent : HOME_ROOT;
 }
 
+export function joinPath(directory: string, filename: string): string {
+  return normalizePath(`${normalizePath(directory)}/${filename}`);
+}
+
 export function normalizePath(path: string): string {
   const normalized = (path || HOME_ROOT).replace(/\\/g, "/").replace(/\/+/g, "/");
   const trimmed = normalized.replace(/\/+$/, "") || HOME_ROOT;
@@ -38,6 +68,33 @@ export function normalizePath(path: string): string {
   return trimmed.startsWith(HOME_ROOT)
     ? trimmed
     : `${HOME_ROOT}/${trimmed.replace(/^\/+/, "")}`;
+}
+
+export function visiblePath(path: string): string {
+  const normalized = normalizePath(path);
+  if (normalized === HOME_ROOT) return "Home";
+  return `Home/${normalized.slice(HOME_ROOT.length + 1)}`;
+}
+
+export function pathFromVisiblePath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed || trimmed.toLowerCase() === "home") return HOME_ROOT;
+  if (trimmed.toLowerCase().startsWith("home/")) {
+    return normalizePath(`${HOME_ROOT}/${trimmed.slice(5)}`);
+  }
+  return normalizePath(trimmed);
+}
+
+export function breadcrumbSegments(path: string): BreadcrumbSegment[] {
+  const normalized = normalizePath(path);
+  const relative = normalized === HOME_ROOT ? [] : normalized.slice(HOME_ROOT.length + 1).split("/");
+  return [
+    { label: "Home", path: HOME_ROOT },
+    ...relative.map((part, index) => ({
+      label: part,
+      path: `${HOME_ROOT}/${relative.slice(0, index + 1).join("/")}`,
+    })),
+  ];
 }
 
 export function childEntries(
@@ -136,17 +193,95 @@ export function createTargetPath(
   name: string,
 ): string | null {
   const trimmed = name.trim();
-  if (!trimmed || trimmed.includes("/") || trimmed.includes("\\"))
-    return null;
+  if (!trimmed || trimmed.includes("/") || trimmed.includes("\\")) return null;
   if (trimmed === "." || trimmed === "..") return null;
-  return `${normalizePath(directory)}/${trimmed}`;
+  return joinPath(directory, trimmed);
+}
+
+export function uploadTargets(
+  entries: ExplorerEntry[],
+  directory: string,
+  filenames: string[],
+  replace: boolean,
+): UploadTarget[] {
+  const existing = new Set(entries.map((entry) => entry.path.toLowerCase()));
+  const allocated: ExplorerEntry[] = [];
+  return filenames.map((filename) => {
+    const cleanName = sanitizeFilename(filename) || "upload.bin";
+    const directPath = joinPath(directory, cleanName);
+    const conflict = existing.has(directPath.toLowerCase());
+    if (replace) {
+      return { sourceName: filename, path: directPath, conflict };
+    }
+    const candidate = uniquePath([...entries, ...allocated], directory, cleanName);
+    allocated.push({ path: candidate, name: filename, kind: "file" });
+    return { sourceName: filename, path: candidate, conflict };
+  });
+}
+
+export function sanitizeFilename(filename: string): string {
+  return filename
+    .replace(/[\u0000-\u001f]/g, "")
+    .replace(/[\\/]/g, "-")
+    .trim()
+    .slice(0, 180);
+}
+
+export function fileTypeLabel(entry: ExplorerEntry | null | undefined): string {
+  if (!entry) return "Select an item";
+  if (entry.kind === "directory") return "Folder";
+  const name = entry.name.toLowerCase();
+  const contentType = ((entry.contentType || "").split(";")[0] || "").trim().toLowerCase();
+  if (/\.(html|htm)$/i.test(name) || contentType === "text/html") return "HTML document";
+  if (/\.(md|markdown)$/i.test(name) || contentType === "text/markdown") return "Markdown document";
+  if (/\.(txt|log|csv)$/i.test(name) || contentType.startsWith("text/")) return "Text document";
+  if (/\.(ts|tsx|js|jsx|json|jsonc|css|scss|yml|yaml|toml|xml|py|go|rs|java|php|sh)$/i.test(name)) return "Code file";
+  if (contentType.startsWith("image/")) return "Image";
+  if (contentType.startsWith("video/")) return "Video";
+  if (contentType.startsWith("audio/")) return "Audio";
+  return "File";
+}
+
+export function formatSize(value: number | undefined): string {
+  if (!Number.isFinite(value) || !value || value <= 0) return "-";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function rectsIntersect(a: DOMRect, b: DOMRect): boolean {
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+}
+
+export function isTextInputTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
 }
 
 export function pathFromLaunchParams(params: Record<string, unknown>): string {
-  const folder = params.w3kitsOpenFolder;
+  const folder = params.appkitsOpenFolder;
   if (folder && typeof folder === "object") {
     const path = (folder as Record<string, unknown>).path;
     if (typeof path === "string") return normalizePath(path);
   }
+  const file = params.appkitsOpenFile;
+  if (file && typeof file === "object") {
+    const path = (file as Record<string, unknown>).path;
+    if (typeof path === "string") return parentPath(path);
+  }
   return HOME_ROOT;
+}
+
+export function selectedPathFromLaunchParams(
+  params: Record<string, unknown>,
+): string | null {
+  const file = params.appkitsOpenFile;
+  if (file && typeof file === "object") {
+    const path = (file as Record<string, unknown>).path;
+    if (typeof path === "string") return normalizePath(path);
+  }
+  return null;
 }

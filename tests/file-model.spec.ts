@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   HOME_ROOT,
+  breadcrumbSegments,
   buildDirectoryTree,
   childEntries,
   createTargetPath,
+  fileTypeLabel,
   pendingCreateEntry,
   pendingCreatePath,
   pathFromLaunchParams,
+  pathFromVisiblePath,
+  sanitizeFilename,
   searchEntries,
+  selectedPathFromLaunchParams,
   uniquePath,
+  uploadTargets,
+  visiblePath,
   type ExplorerEntry,
 } from "../src/file-model";
 
@@ -49,7 +56,7 @@ describe("file explorer model", () => {
   it("reads launched folder params", () => {
     expect(
       pathFromLaunchParams({
-        w3kitsOpenFolder: { path: "/home/agent/project" },
+        appkitsOpenFolder: { path: "/home/agent/project" },
       }),
     ).toBe("/home/agent/project");
   });
@@ -72,5 +79,65 @@ describe("file explorer model", () => {
     );
     expect(createTargetPath(HOME_ROOT, "")).toBeNull();
     expect(createTargetPath(HOME_ROOT, "nested/file.txt")).toBeNull();
+  });
+
+  it("selects a launched file while opening its containing folder", () => {
+    const params = {
+      appkitsOpenFile: {
+        scope: "desktop-file",
+        path: "/home/agent/project/a.txt",
+        name: "a.txt",
+      },
+    };
+    expect(pathFromLaunchParams(params)).toBe("/home/agent/project");
+    expect(selectedPathFromLaunchParams(params)).toBe("/home/agent/project/a.txt");
+  });
+
+  it("maps visible breadcrumb paths back to desktop paths", () => {
+    expect(visiblePath("/home/agent/project/src")).toBe("Home/project/src");
+    expect(pathFromVisiblePath("Home/project/src")).toBe(
+      "/home/agent/project/src",
+    );
+    expect(breadcrumbSegments("/home/agent/project/src").map((part) => part.label)).toEqual([
+      "Home",
+      "project",
+      "src",
+    ]);
+  });
+
+  it("sanitizes unsafe file names for create, upload, and rename", () => {
+    expect(sanitizeFilename(" ../bad/name.txt\0 ")).toBe("..-bad-name.txt");
+  });
+
+  it("plans upload targets without colliding duplicate batch names", () => {
+    expect(
+      uploadTargets(entries, HOME_ROOT, ["readme.md", "readme.md"], false).map(
+        (target) => target.path,
+      ),
+    ).toEqual(["/home/agent/readme 2.md", "/home/agent/readme 3.md"]);
+  });
+
+  it("reports upload conflicts for overwrite confirmation", () => {
+    expect(uploadTargets(entries, HOME_ROOT, ["readme.md"], true)).toEqual([
+      {
+        sourceName: "readme.md",
+        path: "/home/agent/readme.md",
+        conflict: true,
+      },
+    ]);
+  });
+
+  it("labels common file types for details and menus", () => {
+    expect(fileTypeLabel({ path: "/home/agent/app.ts", name: "app.ts", kind: "file" })).toBe(
+      "Code file",
+    );
+    expect(
+      fileTypeLabel({
+        path: "/home/agent/photo.png",
+        name: "photo.png",
+        kind: "file",
+        contentType: "image/png",
+      }),
+    ).toBe("Image");
   });
 });

@@ -15,13 +15,17 @@ import * as w3kits from "@w3kits/sdk/client";
 import {
   HOME_ROOT,
   buildDirectoryTree,
+  createTargetPath,
   filenameFromPath,
   normalizePath,
   parentPath,
+  pendingCreateEntry,
+  pendingCreatePath,
   pathFromLaunchParams,
   searchEntries,
   uniquePath,
   type ExplorerEntry,
+  type PendingCreateKind,
   type TreeNode,
 } from "./file-model";
 import "./styles.css";
@@ -34,6 +38,11 @@ interface PendingUpload {
   conflict: boolean;
 }
 
+interface PendingCreate {
+  kind: PendingCreateKind;
+  directory: string;
+}
+
 function App() {
   const [entries, setEntries] = React.useState<ExplorerEntry[]>([]);
   const [currentPath, setCurrentPath] = React.useState(HOME_ROOT);
@@ -43,10 +52,14 @@ function App() {
   const [preview, setPreview] = React.useState<string>("");
   const [renamingPath, setRenamingPath] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
+  const [pendingCreate, setPendingCreate] = React.useState<PendingCreate | null>(
+    null,
+  );
   const [pendingUpload, setPendingUpload] = React.useState<PendingUpload | null>(
     null,
   );
   const uploadRef = React.useRef<HTMLInputElement | null>(null);
+  const pendingCreateCommitRef = React.useRef(false);
 
   const selectedEntries = React.useMemo(
     () => entries.filter((entry) => selected.includes(entry.path)),
@@ -56,10 +69,18 @@ function App() {
     () => searchEntries(entries, currentPath, search),
     [currentPath, entries, search],
   );
+  const visibleEntriesWithPending = React.useMemo(() => {
+    if (!pendingCreate || pendingCreate.directory !== currentPath || search)
+      return visibleEntries;
+    return [
+      pendingCreateEntry(currentPath, pendingCreate.kind, renameValue),
+      ...visibleEntries,
+    ];
+  }, [currentPath, pendingCreate, renameValue, search, visibleEntries]);
   const tree = React.useMemo(() => buildDirectoryTree(entries), [entries]);
 
-  const refresh = React.useCallback(async () => {
-    const result = await w3kits.FileSystem.list(HOME_ROOT);
+  const refreshPath = React.useCallback(async (path: string) => {
+    const result = await w3kits.FileSystem.list(path);
     const nextEntries = result.entries.map((entry) => ({
       path: normalizePath(entry.path),
       name: entry.name || filenameFromPath(entry.path),
@@ -72,18 +93,26 @@ function App() {
     setEntries(nextEntries);
   }, []);
 
+  const refresh = React.useCallback(
+    () => refreshPath(currentPath),
+    [currentPath, refreshPath],
+  );
+
   React.useEffect(() => {
     void w3kits.Window.setTitle("File Explorer");
     void w3kits.Launch.params().then((params) =>
       setCurrentPath(pathFromLaunchParams(params)),
     );
-    void refresh();
     const offLaunch = w3kits.Launch.onChange((params) => {
       setCurrentPath(pathFromLaunchParams(params));
       setSelected([]);
     });
     const offContext = w3kits.ContextMenu.onSelect((itemId) => {
       if (itemId === "open") openSelected();
+      if (itemId === "new-file") startPendingCreate("file");
+      if (itemId === "new-folder") startPendingCreate("directory");
+      if (itemId === "upload") uploadRef.current?.click();
+      if (itemId === "refresh") void refresh();
       if (itemId === "rename") startRename(selectedEntries[0]);
       if (itemId === "delete") void deleteSelected();
       if (itemId === "copy-path") void copySelectedPaths();
@@ -93,6 +122,10 @@ function App() {
       offContext();
     };
   }, [refresh, selectedEntries]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   React.useEffect(() => {
     const entry = selectedEntries[0];
@@ -115,10 +148,16 @@ function App() {
       return;
     }
     if (event.shiftKey && selected.length > 0) {
-      const first = visibleEntries.findIndex((item) => item.path === selected[0]);
-      const next = visibleEntries.findIndex((item) => item.path === entry.path);
+      const first = visibleEntriesWithPending.findIndex(
+        (item) => item.path === selected[0],
+      );
+      const next = visibleEntriesWithPending.findIndex(
+        (item) => item.path === entry.path,
+      );
       const [start, end] = [Math.min(first, next), Math.max(first, next)];
-      setSelected(visibleEntries.slice(start, end + 1).map((item) => item.path));
+      setSelected(
+        visibleEntriesWithPending.slice(start, end + 1).map((item) => item.path),
+      );
       return;
     }
     setSelected([entry.path]);
@@ -140,32 +179,55 @@ function App() {
     if (entry) openEntry(entry);
   }
 
-  async function createFolder() {
-    const path = uniquePath(entries, currentPath, "New Folder");
-    await w3kits.FileSystem.mkdir(path);
-    await refresh();
-    setSelected([path]);
-  }
-
-  async function createTextFile() {
-    const path = uniquePath(entries, currentPath, "Untitled.txt");
-    await w3kits.FileSystem.write({
-      path,
-      body: "",
-      contentType: "text/plain;charset=UTF-8",
-    });
-    await refresh();
-    setSelected([path]);
-    startRename({ path, name: filenameFromPath(path), kind: "file" });
+  function startPendingCreate(kind: PendingCreateKind) {
+    const defaultName = kind === "directory" ? "New Folder" : "Untitled.txt";
+    const path = uniquePath(entries, currentPath, defaultName);
+    const name = filenameFromPath(path);
+    setPendingCreate({ kind, directory: currentPath });
+    setRenamingPath(pendingCreatePath(currentPath, kind));
+    setRenameValue(name);
+    setSelected([pendingCreatePath(currentPath, kind)]);
   }
 
   function startRename(entry: ExplorerEntry | undefined) {
     if (!entry) return;
+    setPendingCreate(null);
     setRenamingPath(entry.path);
     setRenameValue(entry.name);
   }
 
   async function finishRename(commit: boolean) {
+    if (pendingCreate) {
+      if (pendingCreateCommitRef.current) return;
+      pendingCreateCommitRef.current = true;
+      try {
+        const pendingPath = pendingCreatePath(
+          pendingCreate.directory,
+          pendingCreate.kind,
+        );
+        setRenamingPath(null);
+        setPendingCreate(null);
+        setSelected([]);
+        if (!commit) return;
+        const target = createTargetPath(pendingCreate.directory, renameValue);
+        if (!target) return;
+        if (pendingCreate.kind === "directory") {
+          await w3kits.FileSystem.mkdir(target);
+        } else {
+          await w3kits.FileSystem.write({
+            path: target,
+            body: "",
+            contentType: "text/plain;charset=UTF-8",
+          });
+        }
+        await refreshPath(pendingCreate.directory);
+        setSelected([target]);
+        if (renamingPath === pendingPath) setRenamingPath(null);
+        return;
+      } finally {
+        pendingCreateCommitRef.current = false;
+      }
+    }
     const entry = entries.find((item) => item.path === renamingPath);
     const nextName = renameValue.trim();
     setRenamingPath(null);
@@ -177,13 +239,16 @@ function App() {
   }
 
   async function deleteSelected() {
-    for (const entry of selectedEntries) {
+    const entriesToDelete = selectedEntries.filter(
+      (entry) => !entry.path.startsWith("pending:"),
+    );
+    for (const entry of entriesToDelete) {
       await w3kits.FileSystem.delete(entry.path);
     }
     setSelected([]);
     await refresh();
     void w3kits.Notification.show({
-      title: selectedEntries.length === 1 ? "Item deleted" : "Items deleted",
+      title: entriesToDelete.length === 1 ? "Item deleted" : "Items deleted",
       variant: "success",
     });
   }
@@ -223,17 +288,74 @@ function App() {
 
   function showHostContextMenu(entry: ExplorerEntry, event: React.MouseEvent) {
     event.preventDefault();
+    event.stopPropagation();
     setSelected((current) =>
       current.includes(entry.path) ? current : [entry.path],
     );
+    const selectionSize = selected.includes(entry.path)
+      ? selected.length
+      : 1;
+    const folder = entry.kind === "directory";
+    void w3kits.ContextMenu.open({
+      x: event.clientX,
+      y: event.clientY,
+      items:
+        selectionSize > 1
+          ? [
+              { id: "open", label: "Open Selected", icon: "open" },
+              { type: "separator" },
+              { id: "copy-path", label: "Copy Paths", icon: "copy-path" },
+              {
+                id: "delete",
+                label: "Delete Selected",
+                icon: "delete",
+                destructive: true,
+              },
+            ]
+          : [
+              { id: "open", label: "Open", icon: "open", shortcut: "Enter" },
+              {
+                type: "submenu",
+                label: "New",
+                icon: "new-file",
+                items: [
+                  { id: "new-folder", label: "Folder", icon: "new-folder" },
+                  { id: "new-file", label: "Text File", icon: "new-file" },
+                ],
+              },
+              { type: "separator" },
+              { id: "rename", label: "Rename", icon: "rename", shortcut: "F2" },
+              { id: "copy-path", label: "Copy Path", icon: "copy-path" },
+              {
+                id: "delete",
+                label: folder ? "Delete Folder" : "Delete File",
+                icon: "delete",
+                destructive: true,
+              },
+            ],
+    });
+  }
+
+  function showBackgroundContextMenu(event: React.MouseEvent) {
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    setSelected([]);
     void w3kits.ContextMenu.open({
       x: event.clientX,
       y: event.clientY,
       items: [
-        { id: "open", label: "Open" },
-        { id: "rename", label: "Rename" },
-        { id: "copy-path", label: "Copy Path" },
-        { id: "delete", label: "Delete", destructive: true },
+        {
+          type: "submenu",
+          label: "New",
+          icon: "new-file",
+          items: [
+            { id: "new-folder", label: "Folder", icon: "new-folder" },
+            { id: "new-file", label: "Text File", icon: "new-file" },
+          ],
+        },
+        { type: "separator" },
+        { id: "upload", label: "Upload File", icon: "upload" },
+        { id: "refresh", label: "Refresh", icon: "refresh" },
       ],
     });
   }
@@ -244,7 +366,7 @@ function App() {
     if (event.key === "Delete") void deleteSelected();
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      setSelected(visibleEntries.map((entry) => entry.path));
+      setSelected(visibleEntriesWithPending.map((entry) => entry.path));
     }
   }
 
@@ -257,10 +379,10 @@ function App() {
         <button onClick={refresh} title="Refresh">
           <RefreshCw size={18} />
         </button>
-        <button onClick={createFolder} title="New folder">
+        <button onClick={() => startPendingCreate("directory")} title="New folder">
           <FolderPlus size={18} />
         </button>
-        <button onClick={createTextFile} title="New text file">
+        <button onClick={() => startPendingCreate("file")} title="New text file">
           <FilePlus2 size={18} />
         </button>
         <button onClick={() => uploadRef.current?.click()} title="Upload">
@@ -325,8 +447,11 @@ function App() {
         <aside className="tree">
           <Tree node={tree} currentPath={currentPath} onOpen={setCurrentPath} />
         </aside>
-        <section className={`files ${viewMode}`}>
-          {visibleEntries.map((entry) => (
+        <section
+          className={`files ${viewMode}`}
+          onContextMenu={showBackgroundContextMenu}
+        >
+          {visibleEntriesWithPending.map((entry) => (
             <button
               key={entry.path}
               className="file-row"
@@ -341,10 +466,16 @@ function App() {
                   autoFocus
                   value={renameValue}
                   onChange={(event) => setRenameValue(event.target.value)}
-                  onBlur={() => void finishRename(true)}
+                  onBlur={() => void finishRename(!pendingCreate)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") void finishRename(true);
-                    if (event.key === "Escape") void finishRename(false);
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void finishRename(true);
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      void finishRename(false);
+                    }
                   }}
                 />
               ) : (

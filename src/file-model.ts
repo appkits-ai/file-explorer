@@ -10,6 +10,8 @@ export interface ExplorerEntry {
   temporary?: boolean;
 }
 
+export type PendingCreateKind = "file" | "directory";
+
 export interface TreeNode {
   path: string;
   name: string;
@@ -106,6 +108,38 @@ export function uniquePath(
     index += 1;
   }
   return candidate;
+}
+
+export function pendingCreatePath(
+  directory: string,
+  kind: PendingCreateKind,
+): string {
+  return `${normalizePath(directory)}/.__appkits_pending_${kind}`;
+}
+
+export function pendingCreateEntry(
+  directory: string,
+  kind: PendingCreateKind,
+  name: string,
+): ExplorerEntry {
+  return {
+    path: pendingCreatePath(directory, kind),
+    name,
+    kind,
+    size: 0,
+    temporary: true,
+  };
+}
+
+export function createTargetPath(
+  directory: string,
+  name: string,
+): string | null {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.includes("/") || trimmed.includes("\\"))
+    return null;
+  if (trimmed === "." || trimmed === "..") return null;
+  return `${normalizePath(directory)}/${trimmed}`;
 }
 
 export function pathFromLaunchParams(params: Record<string, unknown>): string {

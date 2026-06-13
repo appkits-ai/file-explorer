@@ -3,6 +3,9 @@ import {
   HOME_ROOT,
   buildDirectoryTree,
   childEntries,
+  createTargetPath,
+  pendingCreateEntry,
+  pendingCreatePath,
   pathFromLaunchParams,
   searchEntries,
   uniquePath,
@@ -49,5 +52,25 @@ describe("file explorer model", () => {
         w3kitsOpenFolder: { path: "/home/agent/project" },
       }),
     ).toBe("/home/agent/project");
+  });
+
+  it("models pending create rows without committing a real file path", () => {
+    expect(pendingCreatePath(HOME_ROOT, "file")).toBe(
+      "/home/agent/.__appkits_pending_file",
+    );
+    expect(pendingCreateEntry(HOME_ROOT, "directory", "New Folder")).toMatchObject({
+      path: "/home/agent/.__appkits_pending_directory",
+      name: "New Folder",
+      kind: "directory",
+      temporary: true,
+    });
+  });
+
+  it("validates committed create target names", () => {
+    expect(createTargetPath(HOME_ROOT, "notes.txt")).toBe(
+      "/home/agent/notes.txt",
+    );
+    expect(createTargetPath(HOME_ROOT, "")).toBeNull();
+    expect(createTargetPath(HOME_ROOT, "nested/file.txt")).toBeNull();
   });
 });

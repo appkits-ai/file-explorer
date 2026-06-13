@@ -4,7 +4,10 @@ import {
   breadcrumbSegments,
   buildDirectoryTree,
   childEntries,
+  createTargetPath,
   fileTypeLabel,
+  pendingCreateEntry,
+  pendingCreatePath,
   pathFromLaunchParams,
   pathFromVisiblePath,
   sanitizeFilename,
@@ -56,6 +59,26 @@ describe("file explorer model", () => {
         appkitsOpenFolder: { path: "/home/agent/project" },
       }),
     ).toBe("/home/agent/project");
+  });
+
+  it("models pending create rows without committing a real file path", () => {
+    expect(pendingCreatePath(HOME_ROOT, "file")).toBe(
+      "/home/agent/.__appkits_pending_file",
+    );
+    expect(pendingCreateEntry(HOME_ROOT, "directory", "New Folder")).toMatchObject({
+      path: "/home/agent/.__appkits_pending_directory",
+      name: "New Folder",
+      kind: "directory",
+      temporary: true,
+    });
+  });
+
+  it("validates committed create target names", () => {
+    expect(createTargetPath(HOME_ROOT, "notes.txt")).toBe(
+      "/home/agent/notes.txt",
+    );
+    expect(createTargetPath(HOME_ROOT, "")).toBeNull();
+    expect(createTargetPath(HOME_ROOT, "nested/file.txt")).toBeNull();
   });
 
   it("selects a launched file while opening its containing folder", () => {

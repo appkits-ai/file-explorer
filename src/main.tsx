@@ -26,6 +26,7 @@ import {
   breadcrumbSegments,
   buildDirectoryTree,
   childEntries,
+  createTargetPath,
   fileTypeLabel,
   filenameFromPath,
   formatSize,
@@ -33,6 +34,8 @@ import {
   joinPath,
   normalizePath,
   parentPath,
+  pendingCreateEntry,
+  pendingCreatePath,
   pathFromLaunchParams,
   pathFromVisiblePath,
   rectsIntersect,
@@ -43,6 +46,7 @@ import {
   uploadTargets,
   visiblePath,
   type ExplorerEntry,
+  type PendingCreateKind,
   type SelectionRect,
   type SelectionState,
   type TreeNode,
@@ -65,13 +69,21 @@ interface PendingUpload {
   conflicts: string[];
 }
 
-const TEXT_FILE_BODY: Record<".txt" | ".md" | ".html", string> = {
+type TextFileExtension = ".txt" | ".md" | ".html";
+
+interface PendingCreate {
+  kind: PendingCreateKind;
+  directory: string;
+  extension?: TextFileExtension;
+}
+
+const TEXT_FILE_BODY: Record<TextFileExtension, string> = {
   ".txt": "",
   ".md": "# Untitled\n",
   ".html": '<!doctype html>\n<html>\n  <head>\n    <meta charset="utf-8" />\n    <title>Untitled</title>\n  </head>\n  <body>\n  </body>\n</html>\n',
 };
 
-const TEXT_FILE_TYPE: Record<".txt" | ".md" | ".html", string> = {
+const TEXT_FILE_TYPE: Record<TextFileExtension, string> = {
   ".txt": "text/plain;charset=UTF-8",
   ".md": "text/markdown;charset=UTF-8",
   ".html": "text/html;charset=UTF-8",
@@ -114,6 +126,7 @@ function App() {
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null);
   const [clipboard, setClipboard] = React.useState<ClipboardState | null>(null);
   const [selectionRect, setSelectionRect] = React.useState<SelectionRect | null>(null);
+  const [pendingCreate, setPendingCreate] = React.useState<PendingCreate | null>(null);
   const [pendingUpload, setPendingUpload] = React.useState<PendingUpload | null>(null);
   const [draggingFiles, setDraggingFiles] = React.useState(false);
   const [status, setStatus] = React.useState("Ready");
@@ -131,6 +144,7 @@ function App() {
   const entriesRef = React.useRef<ExplorerEntry[]>([]);
   const currentPathRef = React.useRef(currentPath);
   const pendingLaunchSelectionRef = React.useRef<string | null>(null);
+  const pendingCreateCommitRef = React.useRef(false);
   const longPressRef = React.useRef<{
     pointerId: number;
     x: number;
@@ -245,6 +259,15 @@ function App() {
   const visibleEntries = React.useMemo(() => {
     return query.trim() ? searchEntries(entries, currentPath, query) : childEntries(entries, currentPath);
   }, [currentPath, entries, query]);
+  const visibleEntriesWithPending = React.useMemo(() => {
+    if (!pendingCreate || pendingCreate.directory !== currentPath || query.trim()) {
+      return visibleEntries;
+    }
+    return [
+      pendingCreateEntry(currentPath, pendingCreate.kind, renameValue),
+      ...visibleEntries,
+    ];
+  }, [currentPath, pendingCreate, query, renameValue, visibleEntries]);
   const tree = React.useMemo(() => buildDirectoryTree(entries), [entries]);
   const entryMap = React.useMemo(() => new Map(entries.map((entry) => [entry.path, entry])), [entries]);
   const selectedEntrySet = React.useMemo(() => new Set(selectedPaths), [selectedPaths]);
@@ -319,6 +342,8 @@ function App() {
   }
 
   function navigate(path: string) {
+    setPendingCreate(null);
+    setRenamingPath(null);
     setCurrentPath(normalizePath(path));
     setSelectedPaths([]);
     setActivePath(null);
@@ -357,11 +382,11 @@ function App() {
       return;
     }
     if (event.shiftKey && activePath) {
-      const first = visibleEntries.findIndex((item) => item.path === activePath);
-      const second = visibleEntries.findIndex((item) => item.path === entry.path);
+      const first = visibleEntriesWithPending.findIndex((item) => item.path === activePath);
+      const second = visibleEntriesWithPending.findIndex((item) => item.path === entry.path);
       if (first >= 0 && second >= 0) {
         const [start, end] = [Math.min(first, second), Math.max(first, second)];
-        setSelectedPaths(visibleEntries.slice(start, end + 1).map((item) => item.path));
+        setSelectedPaths(visibleEntriesWithPending.slice(start, end + 1).map((item) => item.path));
         setActivePath(entry.path);
         return;
       }
@@ -370,36 +395,73 @@ function App() {
   }
 
   async function createFolder() {
-    const path = uniquePath(entriesRef.current, currentPathRef.current, "New Folder");
-    await appkits.FileSystem.mkdir(path);
-    await refresh();
-    setSingleSelection(path);
-    startRename(path);
-    setStatus("Folder created");
+    startPendingCreate("directory");
   }
 
-  async function createFile(extension: ".txt" | ".md" | ".html") {
-    const path = uniquePath(entriesRef.current, currentPathRef.current, `Untitled${extension}`);
-    await appkits.FileSystem.write({
-      path,
-      body: TEXT_FILE_BODY[extension],
-      contentType: TEXT_FILE_TYPE[extension],
-    });
-    await refresh();
-    setSingleSelection(path);
-    startRename(path);
-    setStatus("File created");
+  async function createFile(extension: TextFileExtension) {
+    startPendingCreate("file", extension);
+  }
+
+  function startPendingCreate(kind: PendingCreateKind, extension: TextFileExtension = ".txt") {
+    const directory = currentPathRef.current;
+    const defaultName = kind === "directory" ? "New Folder" : `Untitled${extension}`;
+    const path = uniquePath(entriesRef.current, directory, defaultName);
+    const pendingPath = pendingCreatePath(directory, kind);
+    setContextMenu(null);
+    setPendingCreate({ kind, directory, extension: kind === "file" ? extension : undefined });
+    setRenamingPath(pendingPath);
+    setRenameValue(filenameFromPath(path));
+    setSingleSelection(pendingPath);
+    setStatus(kind === "directory" ? "Creating folder" : "Creating file");
   }
 
   function startRename(path: string | null | undefined) {
     if (!path) return;
     const entry = entriesRef.current.find((item) => item.path === path);
     if (!entry) return;
+    setPendingCreate(null);
     setRenameValue(entry.name);
     setRenamingPath(entry.path);
   }
 
   async function finishRename(commit: boolean) {
+    const pending = pendingCreate;
+    if (pending) {
+      if (pendingCreateCommitRef.current) return;
+      pendingCreateCommitRef.current = true;
+      setRenamingPath(null);
+      setPendingCreate(null);
+      setSingleSelection(null);
+      try {
+        if (!commit) return;
+        const target = createTargetPath(pending.directory, renameValue);
+        if (!target) return;
+        const exists = entriesRef.current.some(
+          (entry) => entry.path.toLowerCase() === target.toLowerCase(),
+        );
+        if (exists) {
+          notify("An item with that name already exists", "error");
+          return;
+        }
+        if (pending.kind === "directory") {
+          await appkits.FileSystem.mkdir(target);
+        } else {
+          const extension = pending.extension || ".txt";
+          await appkits.FileSystem.write({
+            path: target,
+            body: TEXT_FILE_BODY[extension],
+            contentType: TEXT_FILE_TYPE[extension],
+          });
+        }
+        await refresh();
+        setSingleSelection(target);
+        setStatus(pending.kind === "directory" ? "Folder created" : "File created");
+      } finally {
+        pendingCreateCommitRef.current = false;
+      }
+      return;
+    }
+
     const entry = entriesRef.current.find((item) => item.path === renamingPath);
     const nextName = sanitizeFilename(renameValue);
     setRenamingPath(null);
@@ -566,7 +628,7 @@ function App() {
         width: viewportRect.width,
         height: viewportRect.height,
       });
-      const hits = visibleEntries
+      const hits = visibleEntriesWithPending
         .filter((entry) => {
           const element = rowRefs.current.get(entry.path);
           return element ? rectsIntersect(viewportRect, element.getBoundingClientRect()) : false;
@@ -585,7 +647,7 @@ function App() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-  }, [visibleEntries]);
+  }, [visibleEntriesWithPending]);
 
   React.useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -594,8 +656,8 @@ function App() {
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "a") {
         event.preventDefault();
-        setSelectedPaths(visibleEntries.map((entry) => entry.path));
-        setActivePath(visibleEntries[0]?.path || null);
+        setSelectedPaths(visibleEntriesWithPending.map((entry) => entry.path));
+        setActivePath(visibleEntriesWithPending[0]?.path || null);
       } else if (meta && event.key.toLowerCase() === "c") {
         event.preventDefault();
         copyEntries("copy");
@@ -618,7 +680,7 @@ function App() {
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [activeEntry, selectedEntries, visibleEntries, clipboard]);
+  }, [activeEntry, selectedEntries, visibleEntriesWithPending, clipboard]);
 
   const selectedCount = selectedEntries.length;
   const pasteTarget = activeEntry?.kind === "directory" ? activeEntry.path : currentPath;
@@ -765,7 +827,7 @@ function App() {
               });
             }}
           >
-            {visibleEntries.map((entry) => {
+            {visibleEntriesWithPending.map((entry) => {
               const selected = selectedEntrySet.has(entry.path);
               return (
                 <button
@@ -778,11 +840,14 @@ function App() {
                   data-explorer-entry="true"
                   className="file-row"
                   data-selected={selected}
-                  draggable
+                  draggable={!entry.temporary}
                   onClick={(event) => handleRowClick(event, entry)}
-                  onDoubleClick={() => openEntry(entry)}
+                  onDoubleClick={() => {
+                    if (!entry.temporary) openEntry(entry);
+                  }}
                   onPointerDown={(event) => {
                     event.stopPropagation();
+                    if (entry.temporary) return;
                     beginLongPress(event, (point) => {
                       const selectedEntriesForMenu = selected && selectedEntries.length > 1 ? selectedEntries : [entry];
                       setSelectedPaths(selectedEntriesForMenu.map((item) => item.path));
@@ -801,6 +866,7 @@ function App() {
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
+                    if (entry.temporary) return;
                     const menuSelection = selected && selectedEntries.length > 1 ? selectedEntries : [entry];
                     setSelectedPaths(menuSelection.map((item) => item.path));
                     setActivePath(entry.path);
@@ -813,6 +879,10 @@ function App() {
                     });
                   }}
                   onDragStart={(event) => {
+                    if (entry.temporary) {
+                      event.preventDefault();
+                      return;
+                    }
                     const dragEntries = selected ? selectedEntries : [entry];
                     event.dataTransfer.effectAllowed = "copyMove";
                     event.dataTransfer.setData("application/x-appkits-file-entry", JSON.stringify(dragEntries.map((item) => item.path)));
@@ -841,7 +911,7 @@ function App() {
                         onChange={(event) => setRenameValue(event.target.value)}
                         onClick={(event) => event.stopPropagation()}
                         onPointerDown={(event) => event.stopPropagation()}
-                        onBlur={() => void finishRename(true)}
+                        onBlur={() => void finishRename(!pendingCreate)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") void finishRename(true);
                           if (event.key === "Escape") void finishRename(false);
@@ -856,7 +926,7 @@ function App() {
                 </button>
               );
             })}
-            {visibleEntries.length === 0 ? <div className="empty">This folder is empty.</div> : null}
+            {visibleEntriesWithPending.length === 0 ? <div className="empty">This folder is empty.</div> : null}
             {selectionRect ? <div className="selection-rect" style={selectionRect} /> : null}
           </div>
         </section>
@@ -1039,7 +1109,7 @@ function ContextMenu({
   onClose: () => void;
   onOpen: (entry: ExplorerEntry) => void;
   onCreateFolder: () => void;
-  onCreateFile: (extension: ".txt" | ".md" | ".html") => void;
+  onCreateFile: (extension: TextFileExtension) => void;
   onUpload: () => void;
   onCopy: (items: ExplorerEntry[]) => void;
   onCut: (items: ExplorerEntry[]) => void;

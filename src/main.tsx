@@ -21,6 +21,7 @@ import {
   Upload,
 } from "lucide-react";
 import * as appkits from "@appkits-ai/sdk/client";
+import { Button } from "@appkits-ai/ui";
 import {
   HOME_ROOT,
   breadcrumbSegments,
@@ -649,38 +650,62 @@ function App() {
     };
   }, [visibleEntriesWithPending]);
 
+  const keyboardActionsRef = React.useRef<{
+    activeEntry: ExplorerEntry | null;
+    copyEntries: (mode: "copy" | "cut") => void;
+    deleteEntries: (items: ExplorerEntry[]) => Promise<void>;
+    openEntry: (entry: ExplorerEntry) => void;
+    pasteInto: (targetDirectory: string) => Promise<void>;
+    selectedEntries: ExplorerEntry[];
+    startRename: (path: string | undefined) => void;
+    visibleEntriesWithPending: ExplorerEntry[];
+  } | null>(null);
+
+  keyboardActionsRef.current = {
+    activeEntry,
+    copyEntries,
+    deleteEntries,
+    openEntry,
+    pasteInto,
+    selectedEntries,
+    startRename,
+    visibleEntriesWithPending,
+  };
+
   React.useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (!rootRef.current?.contains(document.activeElement)) return;
       if (isTextInputTarget(event.target)) return;
+      const actions = keyboardActionsRef.current;
+      if (!actions) return;
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "a") {
         event.preventDefault();
-        setSelectedPaths(visibleEntriesWithPending.map((entry) => entry.path));
-        setActivePath(visibleEntriesWithPending[0]?.path || null);
+        setSelectedPaths(actions.visibleEntriesWithPending.map((entry) => entry.path));
+        setActivePath(actions.visibleEntriesWithPending[0]?.path || null);
       } else if (meta && event.key.toLowerCase() === "c") {
         event.preventDefault();
-        copyEntries("copy");
+        actions.copyEntries("copy");
       } else if (meta && event.key.toLowerCase() === "x") {
         event.preventDefault();
-        copyEntries("cut");
+        actions.copyEntries("cut");
       } else if (meta && event.key.toLowerCase() === "v") {
         event.preventDefault();
-        void pasteInto(activeEntry?.kind === "directory" ? activeEntry.path : currentPathRef.current);
+        void actions.pasteInto(actions.activeEntry?.kind === "directory" ? actions.activeEntry.path : currentPathRef.current);
       } else if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        void deleteEntries(selectedEntries);
+        void actions.deleteEntries(actions.selectedEntries);
       } else if (event.key === "F2") {
         event.preventDefault();
-        startRename(activeEntry?.path);
-      } else if (event.key === "Enter" && activeEntry) {
+        actions.startRename(actions.activeEntry?.path);
+      } else if (event.key === "Enter" && actions.activeEntry) {
         event.preventDefault();
-        openEntry(activeEntry);
+        actions.openEntry(actions.activeEntry);
       }
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [activeEntry, selectedEntries, visibleEntriesWithPending, clipboard]);
+  }, []);
 
   const selectedCount = selectedEntries.length;
   const pasteTarget = activeEntry?.kind === "directory" ? activeEntry.path : currentPath;
@@ -729,33 +754,33 @@ function App() {
         }}
       />
       <header className="toolbar">
-        <button onClick={() => navigate(parentPath(currentPath))} disabled={currentPath === HOME_ROOT} title="Up">
+        <Button variant="ghost" size="icon-sm" onClick={() => navigate(parentPath(currentPath))} disabled={currentPath === HOME_ROOT} title="Up">
           <FolderUp size={17} />
-        </button>
-        <button onClick={() => void refresh()} title="Refresh">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => void refresh()} title="Refresh">
           <RefreshCw size={17} />
-        </button>
-        <button onClick={() => void createFolder()} title="New folder">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => void createFolder()} title="New folder">
           <FolderPlus size={17} />
-        </button>
-        <button onClick={() => void createFile(".txt")} title="New text file">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => void createFile(".txt")} title="New text file">
           <FilePlus2 size={17} />
-        </button>
-        <button onClick={() => uploadRef.current?.click()} title="Upload">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => uploadRef.current?.click()} title="Upload">
           <Upload size={17} />
-        </button>
-        <button onClick={() => copyEntries("copy")} disabled={selectedCount === 0} title="Copy">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => copyEntries("copy")} disabled={selectedCount === 0} title="Copy">
           <Copy size={17} />
-        </button>
-        <button onClick={() => copyEntries("cut")} disabled={selectedCount === 0} title="Cut">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => copyEntries("cut")} disabled={selectedCount === 0} title="Cut">
           <Scissors size={17} />
-        </button>
-        <button onClick={() => void pasteInto(pasteTarget)} disabled={!clipboard} title="Paste">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => void pasteInto(pasteTarget)} disabled={!clipboard} title="Paste">
           <ClipboardPaste size={17} />
-        </button>
-        <button onClick={() => void deleteEntries(selectedEntries)} disabled={selectedCount === 0} title="Delete">
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => void deleteEntries(selectedEntries)} disabled={selectedCount === 0} title="Delete">
           <Trash2 size={17} />
-        </button>
+        </Button>
         <label className="search">
           <Search size={15} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this folder" />
@@ -927,7 +952,7 @@ function App() {
               );
             })}
             {visibleEntriesWithPending.length === 0 ? <div className="empty">This folder is empty.</div> : null}
-            {selectionRect ? <div className="selection-rect" style={selectionRect} /> : null}
+            {selectionRect ? <div className="selection-rect" style={selectionRect as React.CSSProperties} /> : null}
           </div>
         </section>
 

@@ -13,7 +13,7 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain("CONTEXT_MENU_WIDTH = 220");
     expect(source).toContain("CONTEXT_MENU_MAX_HEIGHT = 360");
     expect(source).toContain("openContextMenu({");
-    expect(source).not.toContain("ContextMenu.open({");
+    expect(source).not.toContain(["ContextMenu", "open({"].join("."));
   });
 
   it("opens plugin-owned menus from statusbar, list background, and rows", () => {

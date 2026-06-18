@@ -6,6 +6,7 @@ import {
   childEntries,
   createTargetPath,
   fileTypeLabel,
+  mergeDirectoryListing,
   pendingCreateEntry,
   pendingCreatePath,
   pathFromLaunchParams,
@@ -34,6 +35,20 @@ describe("file explorer model", () => {
     expect(
       childEntries(entries, "/home/agent/project").map((entry) => entry.name),
     ).toEqual(["a.txt"]);
+  });
+
+  it("replaces only the refreshed directory children", () => {
+    const merged = mergeDirectoryListing(entries, "/home/agent/project", [
+      { path: "/home/agent/project/b.txt", name: "b.txt", kind: "file" },
+    ]);
+
+    expect(childEntries(merged, HOME_ROOT).map((entry) => entry.name)).toEqual([
+      "project",
+      "readme.md",
+    ]);
+    expect(
+      childEntries(merged, "/home/agent/project").map((entry) => entry.name),
+    ).toEqual(["b.txt"]);
   });
 
   it("builds a directory tree from file paths", () => {

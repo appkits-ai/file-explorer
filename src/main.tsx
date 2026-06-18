@@ -4,7 +4,6 @@ import {
   ChevronRight,
   ClipboardPaste,
   Copy,
-  Download,
   FileCode2,
   FileImage,
   FilePlus2,
@@ -13,7 +12,9 @@ import {
   FolderOpen,
   FolderPlus,
   FolderUp,
-  Pencil,
+  Images,
+  LayoutGrid,
+  List,
   RefreshCw,
   Scissors,
   Search,
@@ -33,6 +34,7 @@ import {
   formatSize,
   isTextInputTarget,
   joinPath,
+  mergeDirectoryListing,
   normalizePath,
   parentPath,
   pendingCreateEntry,
@@ -58,6 +60,9 @@ type ContextMenuState =
   | { x: number; y: number; type: "background"; targetDirectory: string }
   | { x: number; y: number; type: "selection"; targetDirectory: string }
   | { x: number; y: number; type: "entry"; targetDirectory: string; entry: ExplorerEntry };
+
+type ExplorerViewMode = "details" | "icons" | "gallery";
+type HostContextMenuItem = appkits.AppKitsContextMenuItem;
 
 interface ClipboardState {
   mode: "copy" | "cut";
@@ -90,9 +95,6 @@ const TEXT_FILE_TYPE: Record<TextFileExtension, string> = {
   ".html": "text/html;charset=UTF-8",
 };
 
-const CONTEXT_MENU_WIDTH = 220;
-const CONTEXT_MENU_MAX_HEIGHT = 360;
-const CONTEXT_MENU_MARGIN = 8;
 const LONG_PRESS_MS = 520;
 const LONG_PRESS_MOVE_LIMIT = 10;
 
@@ -124,12 +126,13 @@ function App() {
   const [renameValue, setRenameValue] = React.useState("");
   const [pathEditing, setPathEditing] = React.useState(false);
   const [pathEditorValue, setPathEditorValue] = React.useState("Home");
-  const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null);
+  const [viewMode, setViewMode] = React.useState<ExplorerViewMode>("details");
   const [clipboard, setClipboard] = React.useState<ClipboardState | null>(null);
   const [selectionRect, setSelectionRect] = React.useState<SelectionRect | null>(null);
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreate | null>(null);
   const [pendingUpload, setPendingUpload] = React.useState<PendingUpload | null>(null);
   const [draggingFiles, setDraggingFiles] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [status, setStatus] = React.useState("Ready");
   const [preview, setPreview] = React.useState("");
 
@@ -146,6 +149,7 @@ function App() {
   const currentPathRef = React.useRef(currentPath);
   const pendingLaunchSelectionRef = React.useRef<string | null>(null);
   const pendingCreateCommitRef = React.useRef(false);
+  const contextMenuActionsRef = React.useRef(new Map<string, () => void>());
   const longPressRef = React.useRef<{
     pointerId: number;
     x: number;
@@ -172,33 +176,55 @@ function App() {
     setPathEditorValue(visiblePath(currentPath));
   }, [currentPath]);
 
-  const refresh = React.useCallback(async () => {
-    const result = await appkits.FileSystem.list(HOME_ROOT);
-    const nextEntries = result.entries.map((entry) => ({
-      path: normalizePath(entry.path),
-      name: entry.name || filenameFromPath(entry.path),
-      kind: entry.kind,
-      contentType: entry.contentType,
-      size: entry.size,
-      local: entry.local,
-      temporary: entry.temporary,
-      updatedAt:
-        "updatedAt" in entry && typeof entry.updatedAt === "string"
-          ? entry.updatedAt
-          : new Date().toISOString(),
-    }));
-    setEntries(nextEntries);
-    const launchSelection = pendingLaunchSelectionRef.current;
-    if (launchSelection && nextEntries.some((entry) => entry.path === launchSelection)) {
-      setSelectedPaths([launchSelection]);
-      setActivePath(launchSelection);
-      pendingLaunchSelectionRef.current = null;
-    } else {
-      setSelectedPaths((current) =>
-        current.filter((path) => nextEntries.some((entry) => entry.path === path)),
-      );
+  const refresh = React.useCallback(async (directory = currentPathRef.current) => {
+    const targetDirectory = normalizePath(directory);
+    setIsRefreshing(true);
+    setStatus(`Refreshing ${visiblePath(targetDirectory)}`);
+    try {
+      const result = await appkits.FileSystem.list(targetDirectory);
+      const listedEntries = result.entries.map((entry) => ({
+        path: normalizePath(entry.path),
+        name: entry.name || filenameFromPath(entry.path),
+        kind: entry.kind,
+        contentType: entry.contentType,
+        size: entry.size,
+        local: entry.local,
+        temporary: entry.temporary,
+        updatedAt:
+          "updatedAt" in entry && typeof entry.updatedAt === "string"
+            ? entry.updatedAt
+            : new Date().toISOString(),
+      }));
+      setEntries((current) => {
+        const nextEntries = mergeDirectoryListing(
+          current,
+          targetDirectory,
+          listedEntries,
+        );
+        const launchSelection = pendingLaunchSelectionRef.current;
+        if (
+          launchSelection &&
+          nextEntries.some((entry) => entry.path === launchSelection)
+        ) {
+          setSelectedPaths([launchSelection]);
+          setActivePath(launchSelection);
+          pendingLaunchSelectionRef.current = null;
+        } else {
+          setSelectedPaths((selection) =>
+            selection.filter((path) =>
+              nextEntries.some((entry) => entry.path === path),
+            ),
+          );
+        }
+        return nextEntries;
+      });
+      setStatus(`${listedEntries.length} item${listedEntries.length === 1 ? "" : "s"} in ${visiblePath(targetDirectory)}`);
+    } catch {
+      notify("Could not refresh folder", "error");
+      setStatus(`Refresh failed for ${visiblePath(targetDirectory)}`);
+    } finally {
+      setIsRefreshing(false);
     }
-    setStatus(`${nextEntries.length} items indexed`);
   }, []);
 
   React.useEffect(() => {
@@ -214,9 +240,12 @@ function App() {
       setSelectedPaths([]);
       setActivePath(null);
     });
-    void refresh();
     return () => offLaunch();
-  }, [refresh]);
+  }, []);
+
+  React.useEffect(() => {
+    void refresh(currentPath);
+  }, [currentPath, refresh]);
 
   React.useEffect(() => {
     if (!renamingPath) return;
@@ -239,23 +268,12 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    if (!contextMenu) return;
-    const close = (event: MouseEvent) => {
-      if (event.target instanceof HTMLElement && event.target.closest(".context-menu")) return;
-      setContextMenu(null);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setContextMenu(null);
-    };
-    window.addEventListener("mousedown", close, true);
-    window.addEventListener("contextmenu", close, true);
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.removeEventListener("mousedown", close, true);
-      window.removeEventListener("contextmenu", close, true);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [contextMenu]);
+    return appkits.ContextMenu.onSelect((itemId) => {
+      const action = contextMenuActionsRef.current.get(itemId);
+      contextMenuActionsRef.current.clear();
+      action?.();
+    });
+  }, []);
 
   const visibleEntries = React.useMemo(() => {
     return query.trim() ? searchEntries(entries, currentPath, query) : childEntries(entries, currentPath);
@@ -302,9 +320,145 @@ function App() {
     };
   }, [detailsEntry]);
 
+  function registerContextAction(
+    actions: Map<string, () => void>,
+    id: string,
+    action: () => void,
+  ) {
+    actions.set(id, action);
+    return id;
+  }
+
   function openContextMenu(menu: ContextMenuState) {
-    const point = clampContextMenuPoint(menu.x, menu.y);
-    setContextMenu({ ...menu, ...point });
+    const actions = new Map<string, () => void>();
+    const targetItems = menu.type === "entry" ? [menu.entry] : selectedEntries;
+    const item = (
+      id: string,
+      label: string,
+      _icon: string,
+      action: () => void,
+      options: { disabled?: boolean; destructive?: boolean } = {},
+    ): HostContextMenuItem => ({
+      id: registerContextAction(actions, id, action),
+      label,
+      disabled: options.disabled,
+      destructive: options.destructive,
+    });
+    const separator = (_id: string): null => null;
+    const viewItems = [
+      item("view-details", "Details", "list", () => setViewMode("details"), {
+        disabled: viewMode === "details",
+      }),
+      item("view-icons", "Icons", "grid", () => setViewMode("icons"), {
+        disabled: viewMode === "icons",
+      }),
+      item("view-gallery", "Gallery", "view", () => setViewMode("gallery"), {
+        disabled: viewMode === "gallery",
+      }),
+    ];
+    const menuItems: Array<HostContextMenuItem | null> =
+      menu.type === "background"
+        ? [
+            clipboard
+              ? item("paste", "Paste", "paste", () =>
+                  void pasteInto(menu.targetDirectory),
+                )
+              : null,
+            item("new-folder", "New Folder", "new-folder", () =>
+              void createFolder(),
+            ),
+            item("new-text", "Text File", "new-file", () =>
+              void createFile(".txt"),
+            ),
+            item("new-markdown", "Markdown File", "new-file", () =>
+              void createFile(".md"),
+            ),
+            item("new-html", "HTML File", "new-file", () =>
+              void createFile(".html"),
+            ),
+            separator("create-separator"),
+            item("upload", "Upload Files", "upload", () =>
+              uploadRef.current?.click(),
+            ),
+            item("refresh", "Refresh", "refresh", () =>
+              void refresh(menu.targetDirectory),
+            ),
+            separator("view-separator"),
+            ...viewItems,
+          ]
+        : menu.type === "selection"
+          ? [
+              item(
+                "open",
+                "Open",
+                "open",
+                () => targetItems[0] && openEntry(targetItems[0]),
+                { disabled: targetItems.length !== 1 },
+              ),
+              item("copy", "Copy Selected", "copy", () =>
+                copyEntries("copy", targetItems),
+              ),
+              item("cut", "Cut Selected", "copy", () =>
+                copyEntries("cut", targetItems),
+              ),
+              clipboard
+                ? item("paste", "Paste", "paste", () =>
+                    void pasteInto(menu.targetDirectory),
+                  )
+                : null,
+              separator("selection-separator"),
+              item(
+                "delete",
+                "Delete Selected",
+                "delete",
+                () => void deleteEntries(targetItems),
+                { destructive: true, disabled: targetItems.length === 0 },
+              ),
+              separator("selection-view-separator"),
+              ...viewItems,
+            ]
+          : [
+              item("open", "Open", menu.entry.kind === "directory" ? "folder" : "file", () =>
+                openEntry(menu.entry),
+              ),
+              item("copy", "Copy", "copy", () => copyEntries("copy", targetItems)),
+              item("cut", "Cut", "copy", () => copyEntries("cut", targetItems)),
+              menu.entry.kind === "directory" && clipboard
+                ? item("paste", "Paste", "paste", () =>
+                    void pasteInto(menu.entry.path),
+                  )
+                : null,
+              separator("entry-separator"),
+              item(
+                "download",
+                "Download",
+                "file",
+                () => void downloadEntry(menu.entry),
+                { disabled: menu.entry.kind !== "file" },
+              ),
+              item("rename", "Rename", "rename", () => startRename(menu.entry.path)),
+              item(
+                "delete",
+                "Delete",
+                "delete",
+                () => void deleteEntries(targetItems),
+                { destructive: true },
+              ),
+              separator("entry-view-separator"),
+              ...viewItems,
+            ];
+    const hostMenuItems = menuItems.filter(
+      (entry): entry is HostContextMenuItem => Boolean(entry),
+    );
+    contextMenuActionsRef.current = actions;
+    void appkits.ContextMenu.open({
+      x: menu.x,
+      y: menu.y,
+      items: hostMenuItems,
+    }).catch(() => {
+      contextMenuActionsRef.current.clear();
+      notify("Could not open context menu", "error");
+    });
   }
 
   function clearLongPress() {
@@ -348,7 +502,7 @@ function App() {
     setCurrentPath(normalizePath(path));
     setSelectedPaths([]);
     setActivePath(null);
-    setContextMenu(null);
+    void appkits.ContextMenu.close().catch(() => undefined);
   }
 
   function setSingleSelection(path: string | null) {
@@ -408,7 +562,7 @@ function App() {
     const defaultName = kind === "directory" ? "New Folder" : `Untitled${extension}`;
     const path = uniquePath(entriesRef.current, directory, defaultName);
     const pendingPath = pendingCreatePath(directory, kind);
-    setContextMenu(null);
+    void appkits.ContextMenu.close().catch(() => undefined);
     setPendingCreate({ kind, directory, extension: kind === "file" ? extension : undefined });
     setRenamingPath(pendingPath);
     setRenameValue(filenameFromPath(path));
@@ -475,12 +629,21 @@ function App() {
   }
 
   async function deleteEntries(items: ExplorerEntry[]) {
-    if (items.length === 0) return;
-    for (const entry of items) await appkits.FileSystem.delete(entry.path);
-    setSelectedPaths([]);
-    setActivePath(null);
-    await refresh();
-    notify(items.length === 1 ? "Item deleted" : "Items deleted", "success");
+    if (items.length === 0) {
+      setStatus("Select items to delete");
+      return;
+    }
+    setStatus(`Deleting ${items.length} item${items.length === 1 ? "" : "s"}`);
+    try {
+      for (const entry of items) await appkits.FileSystem.delete(entry.path);
+      setSelectedPaths([]);
+      setActivePath(null);
+      await refresh();
+      notify(items.length === 1 ? "Item deleted" : "Items deleted", "success");
+    } catch {
+      notify("Could not delete selected items", "error");
+      setStatus("Delete failed");
+    }
   }
 
   function copyEntries(mode: "copy" | "cut", items = selectedEntries) {
@@ -754,33 +917,44 @@ function App() {
         }}
       />
       <header className="toolbar">
-        <Button variant="ghost" size="icon-sm" onClick={() => navigate(parentPath(currentPath))} disabled={currentPath === HOME_ROOT} title="Up">
+        <ToolbarButton label="Up" onClick={() => navigate(parentPath(currentPath))} disabled={currentPath === HOME_ROOT}>
           <FolderUp size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => void refresh()} title="Refresh">
+        </ToolbarButton>
+        <ToolbarButton label="Refresh" onClick={() => void refresh()} disabled={isRefreshing}>
           <RefreshCw size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => void createFolder()} title="New folder">
+        </ToolbarButton>
+        <ToolbarButton label="New folder" onClick={() => void createFolder()}>
           <FolderPlus size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => void createFile(".txt")} title="New text file">
+        </ToolbarButton>
+        <ToolbarButton label="New text file" onClick={() => void createFile(".txt")}>
           <FilePlus2 size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => uploadRef.current?.click()} title="Upload">
+        </ToolbarButton>
+        <ToolbarButton label="Upload" onClick={() => uploadRef.current?.click()}>
           <Upload size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => copyEntries("copy")} disabled={selectedCount === 0} title="Copy">
+        </ToolbarButton>
+        <ToolbarButton label="Copy" onClick={() => copyEntries("copy")} disabled={selectedCount === 0}>
           <Copy size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => copyEntries("cut")} disabled={selectedCount === 0} title="Cut">
+        </ToolbarButton>
+        <ToolbarButton label="Cut" onClick={() => copyEntries("cut")} disabled={selectedCount === 0}>
           <Scissors size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => void pasteInto(pasteTarget)} disabled={!clipboard} title="Paste">
+        </ToolbarButton>
+        <ToolbarButton label="Paste" onClick={() => void pasteInto(pasteTarget)} disabled={!clipboard}>
           <ClipboardPaste size={17} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => void deleteEntries(selectedEntries)} disabled={selectedCount === 0} title="Delete">
+        </ToolbarButton>
+        <ToolbarButton label="Delete" onClick={() => void deleteEntries(selectedEntries)} disabled={selectedCount === 0}>
           <Trash2 size={17} />
-        </Button>
+        </ToolbarButton>
+        <div className="view-switch" role="group" aria-label="View mode">
+          <ToolbarButton label="Details view" onClick={() => setViewMode("details")} active={viewMode === "details"}>
+            <List size={17} />
+          </ToolbarButton>
+          <ToolbarButton label="Icon view" onClick={() => setViewMode("icons")} active={viewMode === "icons"}>
+            <LayoutGrid size={17} />
+          </ToolbarButton>
+          <ToolbarButton label="Gallery view" onClick={() => setViewMode("gallery")} active={viewMode === "gallery"}>
+            <Images size={17} />
+          </ToolbarButton>
+        </div>
         <label className="search">
           <Search size={15} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this folder" />
@@ -818,15 +992,17 @@ function App() {
           <Tree node={tree} currentPath={currentPath} onOpen={navigate} />
         </aside>
 
-        <section className="files-pane">
-          <div className="file-header">
-            <span>Name</span>
-            <span>Type</span>
-            <span>Size</span>
-          </div>
+        <section className="files-pane" data-view={viewMode}>
+          {viewMode === "details" ? (
+            <div className="file-header">
+              <span>Name</span>
+              <span>Type</span>
+              <span>Size</span>
+            </div>
+          ) : null}
           <div
             ref={listRef}
-            className="files"
+            className={`files files-${viewMode}`}
             onPointerDown={(event) => {
               startSelection(event);
               if ((event.target as HTMLElement | null)?.closest("[data-explorer-entry='true']")) return;
@@ -864,6 +1040,7 @@ function App() {
                   type="button"
                   data-explorer-entry="true"
                   className="file-row"
+                  data-view={viewMode}
                   data-selected={selected}
                   draggable={!entry.temporary}
                   onClick={(event) => handleRowClick(event, entry)}
@@ -928,7 +1105,7 @@ function App() {
                   }}
                 >
                   <span className="file-main">
-                    <FileIcon entry={entry} />
+                    <FileIcon entry={entry} large={viewMode !== "details"} />
                     {renamingPath === entry.path ? (
                       <input
                         ref={renameInputRef}
@@ -1018,26 +1195,6 @@ function App() {
         <span>{selectedCount > 0 ? `${selectedCount} selected` : visiblePath(currentPath)}</span>
       </footer>
 
-      {contextMenu ? (
-        <ContextMenu
-          state={contextMenu}
-          clipboard={clipboard}
-          selectedCount={selectedCount}
-          onClose={() => setContextMenu(null)}
-          onOpen={(entry) => openEntry(entry)}
-          onCreateFolder={() => void createFolder()}
-          onCreateFile={(extension) => void createFile(extension)}
-          onUpload={() => uploadRef.current?.click()}
-          onCopy={(items) => copyEntries("copy", items)}
-          onCut={(items) => copyEntries("cut", items)}
-          onPaste={(path) => void pasteInto(path)}
-          onRename={(entry) => startRename(entry.path)}
-          onDownload={(entry) => void downloadEntry(entry)}
-          onDelete={(items) => void deleteEntries(items)}
-          selectedEntries={selectedEntries}
-        />
-      ) : null}
-
       {draggingFiles ? (
         <div className="drop-overlay">
           <div>
@@ -1087,113 +1244,75 @@ function Tree({ node, currentPath, onOpen }: { node: TreeNode; currentPath: stri
   );
 }
 
+function ToolbarButton({
+  label,
+  active = false,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="toolbar-action" data-tooltip={label}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={label}
+        title={label}
+        data-active={active}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {children}
+      </Button>
+    </span>
+  );
+}
+
 function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: boolean }) {
   const size = large ? 34 : 18;
-  if (entry.kind === "directory") return <Folder size={size} className="icon-folder" />;
+  const [thumbnail, setThumbnail] = React.useState("");
   const label = fileTypeLabel(entry);
+
+  React.useEffect(() => {
+    if (label !== "Image" || entry.temporary) {
+      setThumbnail("");
+      return;
+    }
+    let cancelled = false;
+    void appkits.FileSystem.read(entry.path)
+      .then((file) => {
+        if (cancelled || !file.bodyBase64) return;
+        const contentType =
+          file.contentType || entry.contentType || "image/png";
+        setThumbnail(`data:${contentType};base64,${file.bodyBase64}`);
+      })
+      .catch(() => {
+        if (!cancelled) setThumbnail("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.contentType, entry.path, entry.temporary, label]);
+
+  if (thumbnail) {
+    return (
+      <img
+        src={thumbnail}
+        alt=""
+        className={large ? "file-thumbnail large" : "file-thumbnail"}
+      />
+    );
+  }
+  if (entry.kind === "directory") return <Folder size={size} className="icon-folder" />;
   if (label === "Image") return <FileImage size={size} className="icon-image" />;
   if (label === "Code file" || label === "HTML document") return <FileCode2 size={size} className="icon-code" />;
   return <FileText size={size} className="icon-file" />;
-}
-
-function clampContextMenuPoint(x: number, y: number): { x: number; y: number } {
-  if (typeof window === "undefined") return { x, y };
-  return {
-    x: Math.min(
-      Math.max(CONTEXT_MENU_MARGIN, x),
-      Math.max(CONTEXT_MENU_MARGIN, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN),
-    ),
-    y: Math.min(
-      Math.max(CONTEXT_MENU_MARGIN, y),
-      Math.max(CONTEXT_MENU_MARGIN, window.innerHeight - CONTEXT_MENU_MAX_HEIGHT - CONTEXT_MENU_MARGIN),
-    ),
-  };
-}
-
-function ContextMenu({
-  state,
-  selectedEntries,
-  selectedCount,
-  clipboard,
-  onClose,
-  onOpen,
-  onCreateFolder,
-  onCreateFile,
-  onUpload,
-  onCopy,
-  onCut,
-  onPaste,
-  onRename,
-  onDownload,
-  onDelete,
-}: {
-  state: ContextMenuState;
-  selectedEntries: ExplorerEntry[];
-  selectedCount: number;
-  clipboard: ClipboardState | null;
-  onClose: () => void;
-  onOpen: (entry: ExplorerEntry) => void;
-  onCreateFolder: () => void;
-  onCreateFile: (extension: TextFileExtension) => void;
-  onUpload: () => void;
-  onCopy: (items: ExplorerEntry[]) => void;
-  onCut: (items: ExplorerEntry[]) => void;
-  onPaste: (path: string) => void;
-  onRename: (entry: ExplorerEntry) => void;
-  onDownload: (entry: ExplorerEntry) => void;
-  onDelete: (items: ExplorerEntry[]) => void;
-}) {
-  const targetItems = state.type === "entry" ? [state.entry] : selectedEntries;
-  const button = (label: string, icon: React.ReactNode, action: () => void, disabled = false, destructive = false) => (
-    <button
-      type="button"
-      disabled={disabled}
-      data-destructive={destructive}
-      onClick={() => {
-        if (disabled) return;
-        onClose();
-        action();
-      }}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-  return (
-    <div className="context-menu" style={{ left: state.x, top: state.y }} onContextMenu={(event) => event.preventDefault()}>
-      {state.type === "background" ? (
-        <>
-          {clipboard ? button("Paste", <ClipboardPaste size={15} />, () => onPaste(state.targetDirectory)) : null}
-          {button("New Folder", <FolderPlus size={15} />, onCreateFolder)}
-          {button("Text File", <FilePlus2 size={15} />, () => onCreateFile(".txt"))}
-          {button("Markdown File", <FilePlus2 size={15} />, () => onCreateFile(".md"))}
-          {button("HTML File", <FilePlus2 size={15} />, () => onCreateFile(".html"))}
-          <hr />
-          {button("Upload Files", <Upload size={15} />, onUpload)}
-        </>
-      ) : state.type === "selection" ? (
-        <>
-          {button("Open", <FolderOpen size={15} />, () => onOpen(selectedEntries[0]!), selectedCount !== 1)}
-          {button("Copy Selected", <Copy size={15} />, () => onCopy(targetItems), targetItems.length === 0)}
-          {button("Cut Selected", <Scissors size={15} />, () => onCut(targetItems), targetItems.length === 0)}
-          {clipboard ? button("Paste", <ClipboardPaste size={15} />, () => onPaste(state.targetDirectory)) : null}
-          <hr />
-          {button("Delete Selected", <Trash2 size={15} />, () => onDelete(targetItems), targetItems.length === 0, true)}
-        </>
-      ) : (
-        <>
-          {button("Open", state.entry.kind === "directory" ? <FolderOpen size={15} /> : <FileText size={15} />, () => onOpen(state.entry))}
-          {button("Copy", <Copy size={15} />, () => onCopy(targetItems))}
-          {button("Cut", <Scissors size={15} />, () => onCut(targetItems))}
-          {state.entry.kind === "directory" && clipboard ? button("Paste", <ClipboardPaste size={15} />, () => onPaste(state.entry.path)) : null}
-          <hr />
-          {button("Download", <Download size={15} />, () => onDownload(state.entry), state.entry.kind !== "file")}
-          {button("Rename", <Pencil size={15} />, () => onRename(state.entry))}
-          {button("Delete", <Trash2 size={15} />, () => onDelete(targetItems), false, true)}
-        </>
-      )}
-    </div>
-  );
 }
 
 function decodeReadResult(file: Awaited<ReturnType<typeof appkits.FileSystem.read>>): string {

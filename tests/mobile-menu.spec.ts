@@ -6,17 +6,17 @@ const readSource = (relativePath: string) =>
   fs.readFileSync(path.resolve(relativePath), "utf8");
 
 describe("File Explorer mobile menu contracts", () => {
-  it("clamps local context menus to the viewport", () => {
+  it("delegates context menus to the parent shell", () => {
     const source = readSource("src/main.tsx");
 
-    expect(source).toContain("function clampContextMenuPoint");
-    expect(source).toContain("CONTEXT_MENU_WIDTH = 220");
-    expect(source).toContain("CONTEXT_MENU_MAX_HEIGHT = 360");
-    expect(source).toContain("openContextMenu({");
-    expect(source).not.toContain(["ContextMenu", "open({"].join("."));
+    expect(source).toContain("appkits.ContextMenu.open({");
+    expect(source).toContain("appkits.ContextMenu.onSelect");
+    expect(source).toContain("contextMenuActionsRef");
+    expect(source).not.toContain("function ContextMenu(");
+    expect(source).not.toContain('className="context-menu"');
   });
 
-  it("opens plugin-owned menus from statusbar, list background, and rows", () => {
+  it("requests host menus from statusbar, list background, and rows", () => {
     const source = readSource("src/main.tsx");
 
     expect(source).toContain("function beginLongPress(");
@@ -29,10 +29,24 @@ describe("File Explorer mobile menu contracts", () => {
   it("keeps mobile controls touch-sized and menus scrollable", () => {
     const styles = readSource("src/styles.css");
 
-    expect(styles).toContain("max-height: min(360px, calc(100vh - 16px));");
-    expect(styles).toContain("overflow: auto;");
+    expect(styles).toContain(".toolbar-action::after");
+    expect(styles).toContain("content: attr(data-tooltip);");
     expect(styles).toContain(".toolbar button {\n    width: 40px;\n    height: 40px;");
     expect(styles).toContain(".statusbar {\n    min-height: 38px;");
+  });
+
+  it("adds view-mode controls and current-directory refresh", () => {
+    const source = readSource("src/main.tsx");
+    const styles = readSource("src/styles.css");
+
+    expect(source).toContain('React.useState<ExplorerViewMode>("details")');
+    expect(source).toContain('setViewMode("icons")');
+    expect(source).toContain('setViewMode("gallery")');
+    expect(source).toContain("appkits.FileSystem.list(targetDirectory)");
+    expect(source).toContain("mergeDirectoryListing(");
+    expect(styles).toContain(".files-icons");
+    expect(styles).toContain(".files-gallery");
+    expect(styles).toContain(".file-thumbnail.large");
   });
 
   it("follows the host theme while preserving the earlier light surface", () => {

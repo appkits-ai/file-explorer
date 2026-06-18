@@ -110,6 +110,25 @@ export function childEntries(
     });
 }
 
+export function mergeDirectoryListing(
+  entries: ExplorerEntry[],
+  directory: string,
+  children: ExplorerEntry[],
+): ExplorerEntry[] {
+  const root = normalizePath(directory);
+  const nextChildren = children.map((entry) => ({
+    ...entry,
+    path: normalizePath(entry.path),
+  }));
+  const childPaths = new Set(nextChildren.map((entry) => entry.path));
+  const retained = entries.filter(
+    (entry) => parentPath(entry.path) !== root && !childPaths.has(entry.path),
+  );
+  return [...retained, ...nextChildren].sort((a, b) =>
+    a.path.localeCompare(b.path),
+  );
+}
+
 export function buildDirectoryTree(entries: ExplorerEntry[]): TreeNode {
   const directories = new Set([HOME_ROOT]);
   for (const entry of entries) {

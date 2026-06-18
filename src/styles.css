@@ -155,8 +155,54 @@ button:disabled {
   box-shadow: 0 1px 1px var(--app-shadow-soft);
 }
 
+.toolbar button[data-active="true"] {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+
+.toolbar-action {
+  position: relative;
+  display: inline-flex;
+}
+
+.toolbar-action::after {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 50%;
+  max-width: 180px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  padding: 4px 7px;
+  background: var(--app-panel-strong);
+  color: var(--app-text);
+  box-shadow: 0 8px 20px var(--app-shadow-menu);
+  content: attr(data-tooltip);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  transition: opacity 120ms ease;
+}
+
+.toolbar-action:hover::after,
+.toolbar-action:focus-within::after {
+  opacity: 1;
+}
+
+.view-switch {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--app-border-soft);
+}
+
 .toolbar button:hover:not(:disabled),
-.context-menu button:hover:not(:disabled),
 .details-actions button:hover,
 .dialog-actions button:hover {
   background: var(--app-hover);
@@ -299,6 +345,11 @@ button:disabled {
   background: var(--app-surface);
 }
 
+.files-pane[data-view="icons"],
+.files-pane[data-view="gallery"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .file-header,
 .file-row {
   display: grid;
@@ -326,6 +377,22 @@ button:disabled {
   padding: 5px 0;
 }
 
+.files-icons,
+.files-gallery {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+}
+
+.files-icons {
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+}
+
+.files-gallery {
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+}
+
 .file-row {
   width: 100%;
   min-height: 36px;
@@ -333,6 +400,24 @@ button:disabled {
   padding: 5px 14px;
   background: transparent;
   text-align: left;
+}
+
+.file-row[data-view="icons"],
+.file-row[data-view="gallery"] {
+  display: flex;
+  min-height: 116px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+
+.file-row[data-view="gallery"] {
+  min-height: 150px;
 }
 
 .file-row:hover {
@@ -352,6 +437,20 @@ button:disabled {
   min-width: 0;
 }
 
+.file-row[data-view="icons"] .file-main,
+.file-row[data-view="gallery"] .file-main {
+  width: 100%;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.file-row[data-view="icons"] .file-name,
+.file-row[data-view="gallery"] .file-name {
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .file-name,
 .file-meta {
   min-width: 0;
@@ -363,6 +462,16 @@ button:disabled {
 .file-meta {
   color: var(--app-subtle);
   font-size: 12px;
+}
+
+.file-row[data-view="icons"] .file-meta,
+.file-row[data-view="gallery"] .file-meta {
+  width: 100%;
+  text-align: center;
+}
+
+.file-row[data-view="icons"] .file-meta:last-child {
+  display: none;
 }
 
 .file-row input {
@@ -401,6 +510,21 @@ button:disabled {
 
 .icon-image {
   color: var(--icon-image);
+}
+
+.file-thumbnail {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.file-thumbnail.large {
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--app-border-soft);
+  background: var(--app-panel);
 }
 
 .details-content {
@@ -493,47 +617,6 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.context-menu {
-  position: fixed;
-  z-index: 10000;
-  width: 220px;
-  max-height: min(360px, calc(100vh - 16px));
-  overflow: auto;
-  border: 1px solid var(--app-border);
-  border-radius: 7px;
-  padding: 5px;
-  background: var(--app-panel-strong);
-  box-shadow: 0 20px 48px var(--app-shadow-menu);
-}
-
-.context-menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 29px;
-  border: 0;
-  border-radius: 4px;
-  padding: 0 8px;
-  background: transparent;
-  text-align: left;
-}
-
-.context-menu button[data-destructive="true"] {
-  color: var(--app-danger);
-}
-
-.context-menu button[data-destructive="true"]:hover:not(:disabled) {
-  background: var(--app-danger-soft);
-}
-
-.context-menu hr {
-  height: 1px;
-  margin: 5px 4px;
-  border: 0;
-  background: var(--app-border-soft);
 }
 
 .drop-overlay,

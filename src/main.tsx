@@ -89,6 +89,14 @@ type HostContextMenuItem =
   | HostContextMenuSeparatorItem
   | HostContextMenuSubmenuItem;
 
+type ShellFileOpenerSummary = {
+  id: string;
+  label: string;
+  kind: string;
+  icon?: string;
+  appId?: string;
+};
+
 interface ClipboardState {
   mode: "copy" | "cut";
   entries: ExplorerEntry[];
@@ -354,7 +362,7 @@ function App() {
     return id;
   }
 
-  function openContextMenu(menu: ContextMenuState) {
+  async function openContextMenu(menu: ContextMenuState) {
     const actions = new Map<string, () => void>();
     const targetItems = menu.type === "entry" ? [menu.entry] : selectedEntries;
     const item = (
@@ -424,6 +432,49 @@ function App() {
           void createFile(".html"),
         ),
       ]);
+    const openersForEntry = async (
+      entry: ExplorerEntry | undefined,
+    ): Promise<ShellFileOpenerSummary[]> => {
+      if (!entry || entry.kind !== "file") return [];
+      try {
+        const result = await appkits.FileSystem.openers({
+          path: entry.path,
+          name: entry.name,
+          kind: "file",
+          contentType: entry.contentType,
+          local: entry.local,
+        });
+        return result.openers;
+      } catch {
+        return [];
+      }
+    };
+    const openWithMenu = (
+      entry: ExplorerEntry | undefined,
+      openers: ShellFileOpenerSummary[],
+      keyPrefix: string,
+    ): HostContextMenuItem | null => {
+      if (!entry || entry.kind !== "file" || openers.length === 0) return null;
+      return submenu(
+        `${keyPrefix}-open-with`,
+        "Open With",
+        "open",
+        openers.map((opener) =>
+          item(
+            `${keyPrefix}-open-with-${opener.id}`,
+            opener.label,
+            opener.icon || "open",
+            () => openEntryWithShell(entry, opener.id),
+          ),
+        ),
+      );
+    };
+    const selectionOpeners =
+      menu.type === "selection" && targetItems.length === 1
+        ? await openersForEntry(targetItems[0])
+        : [];
+    const entryOpeners =
+      menu.type === "entry" ? await openersForEntry(menu.entry) : [];
     const menuItems: Array<HostContextMenuItem | null> =
       menu.type === "background"
         ? [
@@ -460,6 +511,7 @@ function App() {
                 () => targetItems[0] && openEntry(targetItems[0]),
                 { disabled: targetItems.length !== 1, shortcut: "Enter" },
               ),
+              openWithMenu(targetItems[0], selectionOpeners, "selection"),
               separator("selection-open-separator"),
               item(
                 "copy",
@@ -514,6 +566,7 @@ function App() {
                 () => openEntry(menu.entry),
                 { shortcut: "Enter" },
               ),
+              openWithMenu(menu.entry, entryOpeners, "entry"),
               separator("entry-open-separator"),
               item("copy", "Copy", "copy", () => copyEntries("copy", targetItems), {
                 shortcut: "Ctrl+C",
@@ -642,13 +695,51 @@ function App() {
       return;
     }
     setSingleSelection(entry.path);
-    void appkits.FileSystem.read(entry.path)
-      .then((file) => {
-        const text = decodeReadResult(file);
-        setPreview(text.slice(0, 4000));
-        setStatus(`Opened ${entry.name}`);
+    setPreview("");
+    setStatus(`Opening ${entry.name}`);
+    void appkits.FileSystem.open({
+      path: entry.path,
+      name: entry.name,
+      kind: "file",
+      contentType: entry.contentType,
+      local: entry.local,
+    })
+      .then((result) => {
+        setStatus(
+          `Opening ${entry.name}${result.openerLabel ? ` with ${result.openerLabel}` : ""}`,
+        );
       })
-      .catch(() => notify("Could not open file", "error"));
+      .catch(() => {
+        notify("No shell opener could open this file", "error");
+        setStatus(`Could not open ${entry.name}`);
+      });
+  }
+
+  function openEntryWithShell(entry: ExplorerEntry, openerId?: string) {
+    if (entry.kind === "directory") {
+      navigate(entry.path);
+      return;
+    }
+    setSingleSelection(entry.path);
+    setPreview("");
+    setStatus(`Opening ${entry.name}`);
+    void appkits.FileSystem.open({
+      path: entry.path,
+      name: entry.name,
+      kind: "file",
+      contentType: entry.contentType,
+      local: entry.local,
+      openerId,
+    })
+      .then((result) => {
+        setStatus(
+          `Opening ${entry.name}${result.openerLabel ? ` with ${result.openerLabel}` : ""}`,
+        );
+      })
+      .catch(() => {
+        notify("Could not open file with this app", "error");
+        setStatus(`Could not open ${entry.name}`);
+      });
   }
 
   function handleRowClick(event: React.MouseEvent, entry: ExplorerEntry) {
@@ -1133,7 +1224,7 @@ function App() {
               startSelection(event);
               if ((event.target as HTMLElement | null)?.closest("[data-explorer-entry='true']")) return;
               beginLongPress(event, (point) => {
-                openContextMenu({
+                void openContextMenu({
                   ...point,
                   type: selectedCount > 1 ? "selection" : "background",
                   targetDirectory: pasteTarget,
@@ -1146,7 +1237,7 @@ function App() {
             onContextMenu={(event) => {
               if ((event.target as HTMLElement | null)?.closest("[data-explorer-entry='true']")) return;
               event.preventDefault();
-              openContextMenu({
+              void openContextMenu({
                 x: event.clientX,
                 y: event.clientY,
                 type: selectedCount > 1 ? "selection" : "background",
@@ -1180,7 +1271,7 @@ function App() {
                       const selectedEntriesForMenu = selected && selectedEntries.length > 1 ? selectedEntries : [entry];
                       setSelectedPaths(selectedEntriesForMenu.map((item) => item.path));
                       setActivePath(entry.path);
-                      openContextMenu({
+                      void openContextMenu({
                         ...point,
                         type: selectedEntriesForMenu.length > 1 ? "selection" : "entry",
                         targetDirectory: entry.kind === "directory" ? entry.path : currentPath,
@@ -1198,7 +1289,7 @@ function App() {
                     const menuSelection = selected && selectedEntries.length > 1 ? selectedEntries : [entry];
                     setSelectedPaths(menuSelection.map((item) => item.path));
                     setActivePath(entry.path);
-                    openContextMenu({
+                    void openContextMenu({
                       x: event.clientX,
                       y: event.clientY,
                       type: menuSelection.length > 1 ? "selection" : "entry",
@@ -1297,7 +1388,7 @@ function App() {
         className="statusbar"
         onPointerDown={(event) => {
           beginLongPress(event, (point) => {
-            openContextMenu({
+            void openContextMenu({
               ...point,
               type: selectedCount > 0 ? "selection" : "background",
               targetDirectory: pasteTarget,
@@ -1309,7 +1400,7 @@ function App() {
         onPointerUp={clearLongPress}
         onContextMenu={(event) => {
           event.preventDefault();
-          openContextMenu({
+          void openContextMenu({
             x: event.clientX,
             y: event.clientY,
             type: selectedCount > 0 ? "selection" : "background",

@@ -21,6 +21,17 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).not.toContain('className="context-menu"');
   });
 
+  it("delegates file opening and open-with choices to the parent shell", () => {
+    const source = readSource("src/main.tsx");
+
+    expect(source).toContain("appkits.FileSystem.open({");
+    expect(source).toContain("appkits.FileSystem.openers({");
+    expect(source).toContain("function openEntryWithShell(");
+    expect(source).toContain('"Open With"');
+    expect(source).toContain("opener.id");
+    expect(source).not.toContain("setStatus(`Opened ${entry.name}`)");
+  });
+
   it("requests host menus from statusbar, list background, and rows", () => {
     const source = readSource("src/main.tsx");
 

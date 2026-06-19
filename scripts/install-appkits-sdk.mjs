@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const CORE_REF = "2d51c715e523d912860db7562e676a1b32452bb4";
+const CORE_REF = "1fa8f541fb0bb853ec359740c03aec4c61bffa3b";
 const sdkInstallRoot = path.resolve("node_modules/@appkits-ai/sdk");
 const uiInstallRoot = path.resolve("node_modules/@appkits-ai/ui");
 const sdkClientTypes = path.join(sdkInstallRoot, "dist/client/index.d.ts");
@@ -53,8 +53,14 @@ function installedSdkIsCurrent() {
   }
 
   if (!fs.existsSync(sdkClientProtocol)) return false;
+  const clientTypes = fs.readFileSync(sdkClientTypes, "utf8");
   const protocol = fs.readFileSync(sdkClientProtocol, "utf8");
-  return protocol.includes("APPKITS_DESKTOP_REQUEST") && !protocol.includes("W3KITS_DESKTOP_REQUEST");
+  return (
+    protocol.includes("APPKITS_DESKTOP_REQUEST") &&
+    !protocol.includes("W3KITS_DESKTOP_REQUEST") &&
+    clientTypes.includes("open(input: AppKitsFileOpenInput)") &&
+    clientTypes.includes("openers(input: AppKitsFileOpenTarget)")
+  );
 }
 
 function installedUiIsCurrent() {

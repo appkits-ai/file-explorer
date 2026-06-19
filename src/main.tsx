@@ -131,6 +131,12 @@ const TEXT_FILE_TYPE: Record<TextFileExtension, string> = {
 const LONG_PRESS_MS = 520;
 const LONG_PRESS_MOVE_LIMIT = 10;
 
+function localizedAppTitle(locale: string | undefined): string {
+  return String(locale || "").toLowerCase().startsWith("zh")
+    ? "文件管理器"
+    : "File Explorer";
+}
+
 function systemTheme(): "light" | "dark" {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return "light";
@@ -261,7 +267,12 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    void appkits.Window.setTitle("File Explorer");
+    const applyWindowTitle = (locale: string | undefined) => {
+      void appkits.Window.setTitle(localizedAppTitle(locale));
+    };
+    applyWindowTitle(navigator.language);
+    void appkits.Locale.current().then(applyWindowTitle).catch(() => undefined);
+    const offLocale = appkits.Locale.onChange(applyWindowTitle);
     void appkits.Launch.params().then((params) => {
       const next = pathFromLaunchParams(params);
       pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
@@ -273,7 +284,10 @@ function App() {
       setSelectedPaths([]);
       setActivePath(null);
     });
-    return () => offLaunch();
+    return () => {
+      offLaunch();
+      offLocale();
+    };
   }, []);
 
   React.useEffect(() => {

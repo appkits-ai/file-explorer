@@ -62,7 +62,32 @@ type ContextMenuState =
   | { x: number; y: number; type: "entry"; targetDirectory: string; entry: ExplorerEntry };
 
 type ExplorerViewMode = "details" | "icons" | "gallery";
-type HostContextMenuItem = appkits.AppKitsContextMenuItem;
+type HostContextMenuCommandItem = {
+  type?: "item";
+  id: string;
+  label: string;
+  icon?: string;
+  shortcut?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  destructive?: boolean;
+};
+type HostContextMenuSeparatorItem = {
+  type: "separator";
+  id?: string;
+};
+type HostContextMenuSubmenuItem = {
+  type: "submenu";
+  id?: string;
+  label: string;
+  icon?: string;
+  disabled?: boolean;
+  items: HostContextMenuItem[];
+};
+type HostContextMenuItem =
+  | HostContextMenuCommandItem
+  | HostContextMenuSeparatorItem
+  | HostContextMenuSubmenuItem;
 
 interface ClipboardState {
   mode: "copy" | "cut";
@@ -335,56 +360,96 @@ function App() {
     const item = (
       id: string,
       label: string,
-      _icon: string,
+      icon: string,
       action: () => void,
-      options: { disabled?: boolean; destructive?: boolean } = {},
-    ): HostContextMenuItem => ({
+      options: {
+        checked?: boolean;
+        disabled?: boolean;
+        destructive?: boolean;
+        shortcut?: string;
+      } = {},
+    ): HostContextMenuCommandItem => ({
+      type: "item",
       id: registerContextAction(actions, id, action),
       label,
+      icon,
+      shortcut: options.shortcut,
+      checked: options.checked,
       disabled: options.disabled,
       destructive: options.destructive,
     });
-    const separator = (_id: string): null => null;
-    const viewItems = [
+    const separator = (id: string): HostContextMenuItem => ({
+      type: "separator",
+      id,
+    });
+    const submenu = (
+      id: string,
+      label: string,
+      icon: string,
+      items: HostContextMenuItem[],
+    ): HostContextMenuItem => ({
+      type: "submenu",
+      id,
+      label,
+      icon,
+      items,
+    });
+    const viewItems: HostContextMenuItem[] = [
       item("view-details", "Details", "list", () => setViewMode("details"), {
-        disabled: viewMode === "details",
+        checked: viewMode === "details",
       }),
       item("view-icons", "Icons", "grid", () => setViewMode("icons"), {
-        disabled: viewMode === "icons",
+        checked: viewMode === "icons",
       }),
-      item("view-gallery", "Gallery", "view", () => setViewMode("gallery"), {
-        disabled: viewMode === "gallery",
+      item("view-gallery", "Gallery", "gallery", () => setViewMode("gallery"), {
+        checked: viewMode === "gallery",
       }),
     ];
+    const viewMenu = () => submenu("view", "View", "view", viewItems);
+    const newMenu = () =>
+      submenu("new", "New", "new-file", [
+        item(
+          "new-folder",
+          "New Folder",
+          "new-folder",
+          () => void createFolder(),
+          { shortcut: "Ctrl+Shift+N" },
+        ),
+        separator("new-separator"),
+        item("new-text", "Text File", "new-file", () => void createFile(".txt")),
+        item("new-markdown", "Markdown File", "new-file", () =>
+          void createFile(".md"),
+        ),
+        item("new-html", "HTML File", "new-file", () =>
+          void createFile(".html"),
+        ),
+      ]);
     const menuItems: Array<HostContextMenuItem | null> =
       menu.type === "background"
         ? [
             clipboard
-              ? item("paste", "Paste", "paste", () =>
-                  void pasteInto(menu.targetDirectory),
+              ? item(
+                  "paste",
+                  "Paste",
+                  "paste",
+                  () => void pasteInto(menu.targetDirectory),
+                  { shortcut: "Ctrl+V" },
                 )
               : null,
-            item("new-folder", "New Folder", "new-folder", () =>
-              void createFolder(),
-            ),
-            item("new-text", "Text File", "new-file", () =>
-              void createFile(".txt"),
-            ),
-            item("new-markdown", "Markdown File", "new-file", () =>
-              void createFile(".md"),
-            ),
-            item("new-html", "HTML File", "new-file", () =>
-              void createFile(".html"),
-            ),
-            separator("create-separator"),
+            clipboard ? separator("clipboard-separator") : null,
+            viewMenu(),
+            newMenu(),
+            separator("background-action-separator"),
             item("upload", "Upload Files", "upload", () =>
               uploadRef.current?.click(),
             ),
-            item("refresh", "Refresh", "refresh", () =>
-              void refresh(menu.targetDirectory),
+            item(
+              "refresh",
+              "Refresh",
+              "refresh",
+              () => void refresh(menu.targetDirectory),
+              { shortcut: "Ctrl+R" },
             ),
-            separator("view-separator"),
-            ...viewItems,
           ]
         : menu.type === "selection"
           ? [
@@ -393,59 +458,120 @@ function App() {
                 "Open",
                 "open",
                 () => targetItems[0] && openEntry(targetItems[0]),
-                { disabled: targetItems.length !== 1 },
+                { disabled: targetItems.length !== 1, shortcut: "Enter" },
               ),
-              item("copy", "Copy Selected", "copy", () =>
-                copyEntries("copy", targetItems),
+              separator("selection-open-separator"),
+              item(
+                "copy",
+                "Copy Selected",
+                "copy",
+                () => copyEntries("copy", targetItems),
+                { shortcut: "Ctrl+C" },
               ),
-              item("cut", "Cut Selected", "copy", () =>
-                copyEntries("cut", targetItems),
+              item(
+                "cut",
+                "Cut Selected",
+                "cut",
+                () => copyEntries("cut", targetItems),
+                { shortcut: "Ctrl+X" },
               ),
               clipboard
-                ? item("paste", "Paste", "paste", () =>
-                    void pasteInto(menu.targetDirectory),
+                ? item(
+                    "paste",
+                    "Paste",
+                    "paste",
+                    () => void pasteInto(menu.targetDirectory),
+                    { shortcut: "Ctrl+V" },
                   )
                 : null,
-              separator("selection-separator"),
+              separator("selection-action-separator"),
+              item(
+                "rename",
+                "Rename",
+                "rename",
+                () => startRename(targetItems[0]?.path),
+                { disabled: targetItems.length !== 1, shortcut: "F2" },
+              ),
               item(
                 "delete",
                 "Delete Selected",
                 "delete",
                 () => void deleteEntries(targetItems),
-                { destructive: true, disabled: targetItems.length === 0 },
+                {
+                  destructive: true,
+                  disabled: targetItems.length === 0,
+                  shortcut: "Del",
+                },
               ),
               separator("selection-view-separator"),
-              ...viewItems,
+              viewMenu(),
             ]
           : [
-              item("open", "Open", menu.entry.kind === "directory" ? "folder" : "file", () =>
-                openEntry(menu.entry),
+              item(
+                "open",
+                "Open",
+                menu.entry.kind === "directory" ? "folder" : "file",
+                () => openEntry(menu.entry),
+                { shortcut: "Enter" },
               ),
-              item("copy", "Copy", "copy", () => copyEntries("copy", targetItems)),
-              item("cut", "Cut", "copy", () => copyEntries("cut", targetItems)),
+              separator("entry-open-separator"),
+              item("copy", "Copy", "copy", () => copyEntries("copy", targetItems), {
+                shortcut: "Ctrl+C",
+              }),
+              item("cut", "Cut", "cut", () => copyEntries("cut", targetItems), {
+                shortcut: "Ctrl+X",
+              }),
               menu.entry.kind === "directory" && clipboard
-                ? item("paste", "Paste", "paste", () =>
-                    void pasteInto(menu.entry.path),
+                ? item(
+                    "paste",
+                    "Paste",
+                    "paste",
+                    () => void pasteInto(menu.entry.path),
+                    { shortcut: "Ctrl+V" },
                   )
                 : null,
-              separator("entry-separator"),
+              separator("entry-action-separator"),
               item(
                 "download",
                 "Download",
-                "file",
+                "download",
                 () => void downloadEntry(menu.entry),
                 { disabled: menu.entry.kind !== "file" },
               ),
-              item("rename", "Rename", "rename", () => startRename(menu.entry.path)),
+              item(
+                "rename",
+                "Rename",
+                "rename",
+                () => startRename(menu.entry.path),
+                { shortcut: "F2" },
+              ),
               item(
                 "delete",
                 "Delete",
                 "delete",
                 () => void deleteEntries(targetItems),
-                { destructive: true },
+                { destructive: true, shortcut: "Del" },
               ),
               separator("entry-view-separator"),
-              ...viewItems,
+              viewMenu(),
+              menu.entry.kind === "directory"
+                ? separator("entry-folder-separator")
+                : null,
+              item(
+                "refresh-folder",
+                "Refresh Folder",
+                "refresh",
+                () =>
+                  void refresh(
+                    menu.entry.kind === "directory"
+                      ? menu.entry.path
+                      : menu.targetDirectory,
+                  ),
+                {
+                  disabled: menu.entry.kind !== "directory",
+                  shortcut: "Ctrl+R",
+                },
+              ),
             ];
     const hostMenuItems = menuItems.filter(
       (entry): entry is HostContextMenuItem => Boolean(entry),
@@ -454,7 +580,7 @@ function App() {
     void appkits.ContextMenu.open({
       x: menu.x,
       y: menu.y,
-      items: hostMenuItems,
+      items: hostMenuItems as appkits.AppKitsContextMenuItem[],
     }).catch(() => {
       contextMenuActionsRef.current.clear();
       notify("Could not open context menu", "error");

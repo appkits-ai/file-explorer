@@ -12,6 +12,11 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain("appkits.ContextMenu.open({");
     expect(source).toContain("appkits.ContextMenu.onSelect");
     expect(source).toContain("contextMenuActionsRef");
+    expect(source).toContain('type: "separator"');
+    expect(source).toContain('type: "submenu"');
+    expect(source).toContain("shortcut: options.shortcut");
+    expect(source).toContain("checked: options.checked");
+    expect(source).toContain('"gallery"');
     expect(source).not.toContain("function ContextMenu(");
     expect(source).not.toContain('className="context-menu"');
   });

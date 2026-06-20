@@ -5,6 +5,8 @@ import {
   buildDirectoryTree,
   childEntries,
   createTargetPath,
+  desktopFileIconName,
+  fileExtensionBadge,
   fileTypeLabel,
   mergeDirectoryListing,
   pendingCreateEntry,
@@ -49,6 +51,21 @@ describe("file explorer model", () => {
     expect(
       childEntries(merged, "/home/agent/project").map((entry) => entry.name),
     ).toEqual(["b.txt"]);
+  });
+
+  it("keeps directly loaded empty folders navigable", () => {
+    const merged = mergeDirectoryListing(entries, "/home/agent/empty", []);
+
+    expect(childEntries(merged, "/home/agent/empty")).toEqual([]);
+    expect(merged).toContainEqual({
+      path: "/home/agent/empty",
+      name: "empty",
+      kind: "directory",
+    });
+    expect(buildDirectoryTree(merged).children.map((child) => child.name)).toEqual([
+      "empty",
+      "project",
+    ]);
   });
 
   it("builds a directory tree from file paths", () => {
@@ -154,5 +171,14 @@ describe("file explorer model", () => {
         contentType: "image/png",
       }),
     ).toBe("Image");
+    expect(fileTypeLabel({ path: "/home/agent/editor.app", name: "editor.app", kind: "file" })).toBe(
+      "App launcher",
+    );
+    expect(desktopFileIconName({ path: "/home/agent/editor.app", name: "editor.app", kind: "file" })).toBe(
+      "file-executable",
+    );
+    expect(fileExtensionBadge({ path: "/home/agent/editor.app", name: "editor.app", kind: "file" })).toBe(
+      "APP",
+    );
   });
 });

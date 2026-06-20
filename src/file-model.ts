@@ -19,6 +19,44 @@ export interface UploadTarget {
 
 export type PendingCreateKind = "file" | "directory";
 
+export type FileTypeKind =
+  | "select"
+  | "folder"
+  | "app"
+  | "image"
+  | "audio"
+  | "video"
+  | "archive"
+  | "pdf"
+  | "document"
+  | "spreadsheet"
+  | "presentation"
+  | "database"
+  | "markdown"
+  | "html"
+  | "json"
+  | "code"
+  | "text"
+  | "file";
+
+export type DesktopFileIconName =
+  | "folder"
+  | "file"
+  | "file-code"
+  | "file-text"
+  | "file-markdown"
+  | "file-html"
+  | "file-image"
+  | "file-audio"
+  | "file-video"
+  | "file-archive"
+  | "file-pdf"
+  | "file-doc"
+  | "file-sheet"
+  | "file-slides"
+  | "file-db"
+  | "file-executable";
+
 export interface TreeNode {
   path: string;
   name: string;
@@ -48,6 +86,12 @@ export function filenameFromPath(path: string): string {
   const normalized = normalizePath(path);
   if (normalized === HOME_ROOT) return "Home";
   return normalized.split("/").pop() || normalized;
+}
+
+export function fileExtension(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  const index = trimmed.lastIndexOf(".");
+  return index > 0 ? trimmed.slice(index) : "";
 }
 
 export function parentPath(path: string): string {
@@ -120,6 +164,17 @@ export function mergeDirectoryListing(
     ...entry,
     path: normalizePath(entry.path),
   }));
+  if (root !== HOME_ROOT && !nextChildren.some((entry) => entry.path === root)) {
+    const existingDirectory = entries.find(
+      (entry) => entry.path === root && entry.kind === "directory",
+    );
+    nextChildren.unshift({
+      ...existingDirectory,
+      path: root,
+      name: existingDirectory?.name || filenameFromPath(root),
+      kind: "directory",
+    });
+  }
   const childPaths = new Set(nextChildren.map((entry) => entry.path));
   const retained = entries.filter(
     (entry) => parentPath(entry.path) !== root && !childPaths.has(entry.path),
@@ -160,10 +215,11 @@ export function searchEntries(
   directory: string,
   query: string,
 ): ExplorerEntry[] {
+  const root = normalizePath(directory);
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return childEntries(entries, directory);
   return entries
-    .filter((entry) => entry.name.toLowerCase().includes(trimmed))
+    .filter((entry) => entry.path !== root && entry.name.toLowerCase().includes(trimmed))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -246,19 +302,126 @@ export function sanitizeFilename(filename: string): string {
     .slice(0, 180);
 }
 
-export function fileTypeLabel(entry: ExplorerEntry | null | undefined): string {
-  if (!entry) return "Select an item";
-  if (entry.kind === "directory") return "Folder";
+export function fileTypeKind(entry: ExplorerEntry | null | undefined): FileTypeKind {
+  if (!entry) return "select";
+  if (entry.kind === "directory") return "folder";
   const name = entry.name.toLowerCase();
   const contentType = ((entry.contentType || "").split(";")[0] || "").trim().toLowerCase();
-  if (/\.(html|htm)$/i.test(name) || contentType === "text/html") return "HTML document";
-  if (/\.(md|markdown)$/i.test(name) || contentType === "text/markdown") return "Markdown document";
-  if (/\.(txt|log|csv)$/i.test(name) || contentType.startsWith("text/")) return "Text document";
-  if (/\.(ts|tsx|js|jsx|json|jsonc|css|scss|yml|yaml|toml|xml|py|go|rs|java|php|sh)$/i.test(name)) return "Code file";
-  if (contentType.startsWith("image/")) return "Image";
-  if (contentType.startsWith("video/")) return "Video";
-  if (contentType.startsWith("audio/")) return "Audio";
-  return "File";
+  if (/\.app$/i.test(name)) return "app";
+  if (
+    contentType.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?)$/i.test(name)
+  ) {
+    return "image";
+  }
+  if (
+    contentType.startsWith("audio/") ||
+    /\.(mp3|wav|ogg|flac|m4a|aac|aiff?)$/i.test(name)
+  ) {
+    return "audio";
+  }
+  if (
+    contentType.startsWith("video/") ||
+    /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(name)
+  ) {
+    return "video";
+  }
+  if (/\.(zip|gz|tgz|tar|rar|7z|bz2|xz)$/i.test(name)) return "archive";
+  if (/\.pdf$/i.test(name) || contentType === "application/pdf") return "pdf";
+  if (/\.(doc|docx|rtf|odt)$/i.test(name)) return "document";
+  if (/\.(xls|xlsx|ods)$/i.test(name)) return "spreadsheet";
+  if (/\.(ppt|pptx|odp)$/i.test(name)) return "presentation";
+  if (/\.(sqlite|sqlite3|db|duckdb)$/i.test(name)) return "database";
+  if (/\.(md|markdown|mdx)$/i.test(name) || contentType === "text/markdown") return "markdown";
+  if (/\.(html|htm)$/i.test(name) || contentType === "text/html") return "html";
+  if (/\.(json|jsonc)$/i.test(name) || contentType.includes("json")) return "json";
+  if (
+    /\.(ts|tsx|js|jsx|mjs|cjs|css|scss|sass|less|yml|yaml|toml|xml|sql|py|rb|go|rs|java|kt|swift|php|c|cc|cpp|h|hpp|vue|svelte|sh|bash|zsh|env|ini|conf|dockerfile)$/i.test(
+      name,
+    ) ||
+    contentType.includes("javascript") ||
+    contentType.includes("typescript")
+  ) {
+    return "code";
+  }
+  if (contentType.startsWith("text/") || /\.(txt|log|csv)$/i.test(name)) return "text";
+  return "file";
+}
+
+const FILE_TYPE_LABELS: Record<FileTypeKind, string> = {
+  select: "Select an item",
+  folder: "Folder",
+  app: "App launcher",
+  image: "Image",
+  audio: "Audio",
+  video: "Video",
+  archive: "Archive",
+  pdf: "PDF document",
+  document: "Document",
+  spreadsheet: "Spreadsheet",
+  presentation: "Presentation",
+  database: "Database file",
+  markdown: "Markdown document",
+  html: "HTML document",
+  json: "JSON document",
+  code: "Code file",
+  text: "Text document",
+  file: "File",
+};
+
+export function fileTypeLabel(entry: ExplorerEntry | null | undefined): string {
+  return FILE_TYPE_LABELS[fileTypeKind(entry)];
+}
+
+export function desktopFileIconName(entry: ExplorerEntry): DesktopFileIconName {
+  switch (fileTypeKind(entry)) {
+    case "folder":
+      return "folder";
+    case "app":
+      return "file-executable";
+    case "image":
+      return "file-image";
+    case "audio":
+      return "file-audio";
+    case "video":
+      return "file-video";
+    case "archive":
+      return "file-archive";
+    case "pdf":
+      return "file-pdf";
+    case "document":
+      return "file-doc";
+    case "spreadsheet":
+      return "file-sheet";
+    case "presentation":
+      return "file-slides";
+    case "database":
+      return "file-db";
+    case "markdown":
+      return "file-markdown";
+    case "html":
+      return "file-html";
+    case "json":
+    case "code":
+      return "file-code";
+    case "text":
+      return "file-text";
+    case "select":
+    case "file":
+      return "file";
+  }
+}
+
+export function fileExtensionBadge(entry: ExplorerEntry): string {
+  if (entry.kind === "directory") return "";
+  const extension = fileExtension(entry.name).replace(/^\./, "");
+  if (!extension || extension.length > 5) return "";
+  const badge = extension === "markdown" ? "md" : extension === "jpeg" ? "jpg" : extension;
+  return badge.toUpperCase();
+}
+
+export function isTextPreviewable(entry: ExplorerEntry): boolean {
+  return ["code", "html", "json", "markdown", "text"].includes(fileTypeKind(entry));
 }
 
 export function formatSize(value: number | undefined): string {

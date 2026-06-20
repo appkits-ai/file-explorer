@@ -1,13 +1,21 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import {
+  AppWindow,
   ChevronRight,
   ClipboardPaste,
   Copy,
+  Database,
+  File,
+  FileArchive,
+  FileAudio2,
   FileCode2,
   FileImage,
   FilePlus2,
+  FileSliders,
+  FileSpreadsheet,
   FileText,
+  FileVideo2,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -29,9 +37,12 @@ import {
   buildDirectoryTree,
   childEntries,
   createTargetPath,
-  fileTypeLabel,
+  desktopFileIconName,
+  fileExtensionBadge,
+  fileTypeKind,
   filenameFromPath,
   formatSize,
+  isTextPreviewable,
   isTextInputTarget,
   joinPath,
   mergeDirectoryListing,
@@ -48,13 +59,38 @@ import {
   uniquePath,
   uploadTargets,
   visiblePath,
+  type DesktopFileIconName,
   type ExplorerEntry,
+  type FileTypeKind,
   type PendingCreateKind,
   type SelectionRect,
   type SelectionState,
   type TreeNode,
 } from "./file-model";
+import { pluralSuffix, t, type TranslationKey } from "./i18n";
 import "./styles.css";
+
+const FILE_ICON_COMPONENTS: Record<
+  DesktopFileIconName,
+  React.ComponentType<{ size?: number; className?: string }>
+> = {
+  folder: Folder,
+  file: File,
+  "file-code": FileCode2,
+  "file-text": FileText,
+  "file-markdown": FileCode2,
+  "file-html": FileCode2,
+  "file-image": FileImage,
+  "file-audio": FileAudio2,
+  "file-video": FileVideo2,
+  "file-archive": FileArchive,
+  "file-pdf": FileText,
+  "file-doc": FileText,
+  "file-sheet": FileSpreadsheet,
+  "file-slides": FileSliders,
+  "file-db": Database,
+  "file-executable": AppWindow,
+};
 
 type ContextMenuState =
   | { x: number; y: number; type: "background"; targetDirectory: string }
@@ -131,10 +167,56 @@ const TEXT_FILE_TYPE: Record<TextFileExtension, string> = {
 const LONG_PRESS_MS = 520;
 const LONG_PRESS_MOVE_LIMIT = 10;
 
+const FILE_TYPE_TRANSLATION_KEYS: Record<FileTypeKind, TranslationKey> = {
+  select: "file.select",
+  folder: "file.folder",
+  app: "file.app",
+  image: "file.image",
+  audio: "file.audio",
+  video: "file.video",
+  archive: "file.archive",
+  pdf: "file.pdf",
+  document: "file.document",
+  spreadsheet: "file.spreadsheet",
+  presentation: "file.presentation",
+  database: "file.database",
+  markdown: "file.markdown",
+  html: "file.html",
+  json: "file.json",
+  code: "file.code",
+  text: "file.text",
+  file: "file.file",
+};
+
+function systemLocale(): string {
+  if (typeof navigator === "undefined") return "en";
+  return navigator.language || "en";
+}
+
 function localizedAppTitle(locale: string | undefined): string {
-  return String(locale || "").toLowerCase().startsWith("zh")
-    ? "文件管理器"
-    : "File Explorer";
+  return t(locale, "app.title");
+}
+
+function displayPath(locale: string | undefined, path: string): string {
+  const visible = visiblePath(path);
+  const home = t(locale, "path.home");
+  return visible === "Home" ? home : `${home}${visible.slice("Home".length)}`;
+}
+
+function pathFromDisplayPath(locale: string | undefined, path: string): string {
+  const trimmed = path.trim();
+  const home = t(locale, "path.home");
+  if (home !== "Home" && trimmed.toLowerCase() === home.toLowerCase()) {
+    return pathFromVisiblePath("Home");
+  }
+  if (home !== "Home" && trimmed.toLowerCase().startsWith(`${home.toLowerCase()}/`)) {
+    return pathFromVisiblePath(`Home/${trimmed.slice(home.length + 1)}`);
+  }
+  return pathFromVisiblePath(trimmed);
+}
+
+function localizedFileType(locale: string | undefined, entry: ExplorerEntry | null | undefined): string {
+  return t(locale, FILE_TYPE_TRANSLATION_KEYS[fileTypeKind(entry)]);
 }
 
 function systemTheme(): "light" | "dark" {
@@ -164,15 +246,17 @@ function App() {
   const [renamingPath, setRenamingPath] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
   const [pathEditing, setPathEditing] = React.useState(false);
-  const [pathEditorValue, setPathEditorValue] = React.useState("Home");
+  const [pathEditorValue, setPathEditorValue] = React.useState(() => t(systemLocale(), "path.home"));
   const [viewMode, setViewMode] = React.useState<ExplorerViewMode>("details");
   const [clipboard, setClipboard] = React.useState<ClipboardState | null>(null);
   const [selectionRect, setSelectionRect] = React.useState<SelectionRect | null>(null);
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreate | null>(null);
   const [pendingUpload, setPendingUpload] = React.useState<PendingUpload | null>(null);
   const [draggingFiles, setDraggingFiles] = React.useState(false);
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [status, setStatus] = React.useState("Ready");
+  const [loadingDirectories, setLoadingDirectories] = React.useState<Set<string>>(() => new Set());
+  const [loadedDirectories, setLoadedDirectories] = React.useState<Set<string>>(() => new Set());
+  const [locale, setLocale] = React.useState(systemLocale);
+  const [status, setStatus] = React.useState(() => t(systemLocale(), "status.ready"));
   const [preview, setPreview] = React.useState("");
 
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -212,13 +296,17 @@ function App() {
 
   React.useEffect(() => {
     currentPathRef.current = currentPath;
-    setPathEditorValue(visiblePath(currentPath));
-  }, [currentPath]);
+    setPathEditorValue(displayPath(locale, currentPath));
+  }, [currentPath, locale]);
 
   const refresh = React.useCallback(async (directory = currentPathRef.current) => {
     const targetDirectory = normalizePath(directory);
-    setIsRefreshing(true);
-    setStatus(`Refreshing ${visiblePath(targetDirectory)}`);
+    setLoadingDirectories((current) => {
+      const next = new Set(current);
+      next.add(targetDirectory);
+      return next;
+    });
+    setStatus(t(locale, "status.refreshing", { path: displayPath(locale, targetDirectory) }));
     try {
       const result = await appkits.FileSystem.list(targetDirectory);
       const listedEntries = result.entries.map((entry) => ({
@@ -257,22 +345,39 @@ function App() {
         }
         return nextEntries;
       });
-      setStatus(`${listedEntries.length} item${listedEntries.length === 1 ? "" : "s"} in ${visiblePath(targetDirectory)}`);
+      setLoadedDirectories((current) => {
+        const next = new Set(current);
+        next.add(targetDirectory);
+        return next;
+      });
+      setStatus(
+        t(locale, "status.folderItems", {
+          count: listedEntries.length,
+          path: displayPath(locale, targetDirectory),
+          plural: pluralSuffix(locale, listedEntries.length),
+        }),
+      );
     } catch {
-      notify("Could not refresh folder", "error");
-      setStatus(`Refresh failed for ${visiblePath(targetDirectory)}`);
+      notify(t(locale, "notify.refreshFailed"), "error");
+      setStatus(t(locale, "status.refreshFailed", { path: displayPath(locale, targetDirectory) }));
     } finally {
-      setIsRefreshing(false);
+      setLoadingDirectories((current) => {
+        const next = new Set(current);
+        next.delete(targetDirectory);
+        return next;
+      });
     }
-  }, []);
+  }, [locale]);
 
   React.useEffect(() => {
-    const applyWindowTitle = (locale: string | undefined) => {
-      void appkits.Window.setTitle(localizedAppTitle(locale));
+    const applyLocale = (nextLocale: string | undefined) => {
+      const resolvedLocale = nextLocale || systemLocale();
+      setLocale(resolvedLocale);
+      void appkits.Window.setTitle(localizedAppTitle(resolvedLocale));
     };
-    applyWindowTitle(navigator.language);
-    void appkits.Locale.current().then(applyWindowTitle).catch(() => undefined);
-    const offLocale = appkits.Locale.onChange(applyWindowTitle);
+    applyLocale(systemLocale());
+    void appkits.Locale.current().then(applyLocale).catch(() => undefined);
+    const offLocale = appkits.Locale.onChange(applyLocale);
     void appkits.Launch.params().then((params) => {
       const next = pathFromLaunchParams(params);
       pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
@@ -343,14 +448,22 @@ function App() {
   );
   const activeEntry = activePath ? entryMap.get(activePath) || null : selectedEntries[0] || null;
   const detailsEntry = selectedEntries.length === 1 ? activeEntry : null;
+  const isRefreshing = loadingDirectories.size > 0;
+  const isCurrentDirectoryLoading = loadingDirectories.has(currentPath);
+  const isCurrentDirectoryLoaded = loadedDirectories.has(currentPath);
+  const showLoadingState =
+    isCurrentDirectoryLoading && visibleEntriesWithPending.length === 0;
+  const showEmptyState =
+    !showLoadingState &&
+    visibleEntriesWithPending.length === 0 &&
+    (Boolean(query.trim()) || isCurrentDirectoryLoaded);
 
   React.useEffect(() => {
     if (!detailsEntry || detailsEntry.kind !== "file") {
       setPreview("");
       return;
     }
-    const label = fileTypeLabel(detailsEntry);
-    if (!["Text document", "Markdown document", "HTML document", "Code file"].includes(label)) {
+    if (!isTextPreviewable(detailsEntry)) {
       setPreview("");
       return;
     }
@@ -417,32 +530,32 @@ function App() {
       items,
     });
     const viewItems: HostContextMenuItem[] = [
-      item("view-details", "Details", "list", () => setViewMode("details"), {
+      item("view-details", t(locale, "view.details"), "list", () => setViewMode("details"), {
         checked: viewMode === "details",
       }),
-      item("view-icons", "Icons", "grid", () => setViewMode("icons"), {
+      item("view-icons", t(locale, "view.icons"), "grid", () => setViewMode("icons"), {
         checked: viewMode === "icons",
       }),
-      item("view-gallery", "Gallery", "gallery", () => setViewMode("gallery"), {
+      item("view-gallery", t(locale, "view.gallery"), "gallery", () => setViewMode("gallery"), {
         checked: viewMode === "gallery",
       }),
     ];
-    const viewMenu = () => submenu("view", "View", "view", viewItems);
+    const viewMenu = () => submenu("view", t(locale, "view.mode"), "view", viewItems);
     const newMenu = () =>
-      submenu("new", "New", "new-file", [
+      submenu("new", t(locale, "menu.new"), "new-file", [
         item(
           "new-folder",
-          "New Folder",
+          t(locale, "menu.newFolder"),
           "new-folder",
           () => void createFolder(),
           { shortcut: "Ctrl+Shift+N" },
         ),
         separator("new-separator"),
-        item("new-text", "Text File", "new-file", () => void createFile(".txt")),
-        item("new-markdown", "Markdown File", "new-file", () =>
+        item("new-text", t(locale, "menu.newText"), "new-file", () => void createFile(".txt")),
+        item("new-markdown", t(locale, "menu.newMarkdown"), "new-file", () =>
           void createFile(".md"),
         ),
-        item("new-html", "HTML File", "new-file", () =>
+        item("new-html", t(locale, "menu.newHtml"), "new-file", () =>
           void createFile(".html"),
         ),
       ]);
@@ -471,7 +584,7 @@ function App() {
       if (!entry || entry.kind !== "file" || openers.length === 0) return null;
       return submenu(
         `${keyPrefix}-open-with`,
-        "Open With",
+        t(locale, "action.openWith"),
         "open",
         openers.map((opener) =>
           item(
@@ -495,7 +608,7 @@ function App() {
             clipboard
               ? item(
                   "paste",
-                  "Paste",
+                  t(locale, "action.paste"),
                   "paste",
                   () => void pasteInto(menu.targetDirectory),
                   { shortcut: "Ctrl+V" },
@@ -505,12 +618,12 @@ function App() {
             viewMenu(),
             newMenu(),
             separator("background-action-separator"),
-            item("upload", "Upload Files", "upload", () =>
+            item("upload", t(locale, "action.uploadFiles"), "upload", () =>
               uploadRef.current?.click(),
             ),
             item(
               "refresh",
-              "Refresh",
+              t(locale, "action.refresh"),
               "refresh",
               () => void refresh(menu.targetDirectory),
               { shortcut: "Ctrl+R" },
@@ -520,7 +633,7 @@ function App() {
           ? [
               item(
                 "open",
-                "Open",
+                t(locale, "action.open"),
                 "open",
                 () => targetItems[0] && openEntry(targetItems[0]),
                 { disabled: targetItems.length !== 1, shortcut: "Enter" },
@@ -529,14 +642,14 @@ function App() {
               separator("selection-open-separator"),
               item(
                 "copy",
-                "Copy Selected",
+                t(locale, "action.copySelected"),
                 "copy",
                 () => copyEntries("copy", targetItems),
                 { shortcut: "Ctrl+C" },
               ),
               item(
                 "cut",
-                "Cut Selected",
+                t(locale, "action.cutSelected"),
                 "cut",
                 () => copyEntries("cut", targetItems),
                 { shortcut: "Ctrl+X" },
@@ -544,7 +657,7 @@ function App() {
               clipboard
                 ? item(
                     "paste",
-                    "Paste",
+                    t(locale, "action.paste"),
                     "paste",
                     () => void pasteInto(menu.targetDirectory),
                     { shortcut: "Ctrl+V" },
@@ -553,14 +666,14 @@ function App() {
               separator("selection-action-separator"),
               item(
                 "rename",
-                "Rename",
+                t(locale, "action.rename"),
                 "rename",
                 () => startRename(targetItems[0]?.path),
                 { disabled: targetItems.length !== 1, shortcut: "F2" },
               ),
               item(
                 "delete",
-                "Delete Selected",
+                t(locale, "action.deleteSelected"),
                 "delete",
                 () => void deleteEntries(targetItems),
                 {
@@ -575,23 +688,23 @@ function App() {
           : [
               item(
                 "open",
-                "Open",
+                t(locale, "action.open"),
                 menu.entry.kind === "directory" ? "folder" : "file",
                 () => openEntry(menu.entry),
                 { shortcut: "Enter" },
               ),
               openWithMenu(menu.entry, entryOpeners, "entry"),
               separator("entry-open-separator"),
-              item("copy", "Copy", "copy", () => copyEntries("copy", targetItems), {
+              item("copy", t(locale, "action.copy"), "copy", () => copyEntries("copy", targetItems), {
                 shortcut: "Ctrl+C",
               }),
-              item("cut", "Cut", "cut", () => copyEntries("cut", targetItems), {
+              item("cut", t(locale, "action.cut"), "cut", () => copyEntries("cut", targetItems), {
                 shortcut: "Ctrl+X",
               }),
               menu.entry.kind === "directory" && clipboard
                 ? item(
                     "paste",
-                    "Paste",
+                    t(locale, "action.paste"),
                     "paste",
                     () => void pasteInto(menu.entry.path),
                     { shortcut: "Ctrl+V" },
@@ -600,21 +713,21 @@ function App() {
               separator("entry-action-separator"),
               item(
                 "download",
-                "Download",
+                t(locale, "action.download"),
                 "download",
                 () => void downloadEntry(menu.entry),
                 { disabled: menu.entry.kind !== "file" },
               ),
               item(
                 "rename",
-                "Rename",
+                t(locale, "action.rename"),
                 "rename",
                 () => startRename(menu.entry.path),
                 { shortcut: "F2" },
               ),
               item(
                 "delete",
-                "Delete",
+                t(locale, "action.delete"),
                 "delete",
                 () => void deleteEntries(targetItems),
                 { destructive: true, shortcut: "Del" },
@@ -626,7 +739,7 @@ function App() {
                 : null,
               item(
                 "refresh-folder",
-                "Refresh Folder",
+                t(locale, "action.refreshFolder"),
                 "refresh",
                 () =>
                   void refresh(
@@ -650,7 +763,7 @@ function App() {
       items: hostMenuItems as appkits.AppKitsContextMenuItem[],
     }).catch(() => {
       contextMenuActionsRef.current.clear();
-      notify("Could not open context menu", "error");
+      notify(t(locale, "notify.contextMenuFailed"), "error");
     });
   }
 
@@ -710,7 +823,7 @@ function App() {
     }
     setSingleSelection(entry.path);
     setPreview("");
-    setStatus(`Opening ${entry.name}`);
+    setStatus(t(locale, "status.opening", { name: entry.name }));
     void appkits.FileSystem.open({
       path: entry.path,
       name: entry.name,
@@ -720,12 +833,14 @@ function App() {
     })
       .then((result) => {
         setStatus(
-          `Opening ${entry.name}${result.openerLabel ? ` with ${result.openerLabel}` : ""}`,
+          result.openerLabel
+            ? t(locale, "status.openingWith", { name: entry.name, opener: result.openerLabel })
+            : t(locale, "status.opening", { name: entry.name }),
         );
       })
       .catch(() => {
-        notify("No shell opener could open this file", "error");
-        setStatus(`Could not open ${entry.name}`);
+        notify(t(locale, "notify.noShellOpener"), "error");
+        setStatus(t(locale, "status.couldNotOpen", { name: entry.name }));
       });
   }
 
@@ -736,7 +851,7 @@ function App() {
     }
     setSingleSelection(entry.path);
     setPreview("");
-    setStatus(`Opening ${entry.name}`);
+    setStatus(t(locale, "status.opening", { name: entry.name }));
     void appkits.FileSystem.open({
       path: entry.path,
       name: entry.name,
@@ -747,12 +862,14 @@ function App() {
     })
       .then((result) => {
         setStatus(
-          `Opening ${entry.name}${result.openerLabel ? ` with ${result.openerLabel}` : ""}`,
+          result.openerLabel
+            ? t(locale, "status.openingWith", { name: entry.name, opener: result.openerLabel })
+            : t(locale, "status.opening", { name: entry.name }),
         );
       })
       .catch(() => {
-        notify("Could not open file with this app", "error");
-        setStatus(`Could not open ${entry.name}`);
+        notify(t(locale, "notify.openWithFailed"), "error");
+        setStatus(t(locale, "status.couldNotOpen", { name: entry.name }));
       });
   }
 
@@ -790,7 +907,10 @@ function App() {
 
   function startPendingCreate(kind: PendingCreateKind, extension: TextFileExtension = ".txt") {
     const directory = currentPathRef.current;
-    const defaultName = kind === "directory" ? "New Folder" : `Untitled${extension}`;
+    const defaultName =
+      kind === "directory"
+        ? t(locale, "new.folderName")
+        : `${t(locale, "new.untitled")}${extension}`;
     const path = uniquePath(entriesRef.current, directory, defaultName);
     const pendingPath = pendingCreatePath(directory, kind);
     void appkits.ContextMenu.close().catch(() => undefined);
@@ -798,7 +918,7 @@ function App() {
     setRenamingPath(pendingPath);
     setRenameValue(filenameFromPath(path));
     setSingleSelection(pendingPath);
-    setStatus(kind === "directory" ? "Creating folder" : "Creating file");
+    setStatus(kind === "directory" ? t(locale, "status.creatingFolder") : t(locale, "status.creatingFile"));
   }
 
   function startRename(path: string | null | undefined) {
@@ -826,7 +946,7 @@ function App() {
           (entry) => entry.path.toLowerCase() === target.toLowerCase(),
         );
         if (exists) {
-          notify("An item with that name already exists", "error");
+          notify(t(locale, "notify.nameExists"), "error");
           return;
         }
         if (pending.kind === "directory") {
@@ -841,7 +961,7 @@ function App() {
         }
         await refresh();
         setSingleSelection(target);
-        setStatus(pending.kind === "directory" ? "Folder created" : "File created");
+        setStatus(pending.kind === "directory" ? t(locale, "status.folderCreated") : t(locale, "status.fileCreated"));
       } finally {
         pendingCreateCommitRef.current = false;
       }
@@ -856,31 +976,41 @@ function App() {
     await appkits.FileSystem.move(entry.path, target);
     await refresh();
     setSingleSelection(target);
-    setStatus("Item renamed");
+    setStatus(t(locale, "status.itemRenamed"));
   }
 
   async function deleteEntries(items: ExplorerEntry[]) {
     if (items.length === 0) {
-      setStatus("Select items to delete");
+      setStatus(t(locale, "status.selectItemsToDelete"));
       return;
     }
-    setStatus(`Deleting ${items.length} item${items.length === 1 ? "" : "s"}`);
+    setStatus(
+      t(locale, "status.deleting", {
+        count: items.length,
+        plural: pluralSuffix(locale, items.length),
+      }),
+    );
     try {
       for (const entry of items) await appkits.FileSystem.delete(entry.path);
       setSelectedPaths([]);
       setActivePath(null);
       await refresh();
-      notify(items.length === 1 ? "Item deleted" : "Items deleted", "success");
+      notify(t(locale, items.length === 1 ? "notify.deletedOne" : "notify.deletedMany"), "success");
     } catch {
-      notify("Could not delete selected items", "error");
-      setStatus("Delete failed");
+      notify(t(locale, "notify.deleteFailed"), "error");
+      setStatus(t(locale, "status.deleteFailed"));
     }
   }
 
   function copyEntries(mode: "copy" | "cut", items = selectedEntries) {
     if (items.length === 0) return;
     setClipboard({ mode, entries: items });
-    setStatus(`${mode === "copy" ? "Copied" : "Cut"} ${items.length} item${items.length === 1 ? "" : "s"}`);
+    setStatus(
+      t(locale, mode === "copy" ? "status.copied" : "status.cut", {
+        count: items.length,
+        plural: pluralSuffix(locale, items.length),
+      }),
+    );
   }
 
   async function pasteInto(targetDirectory: string) {
@@ -902,7 +1032,7 @@ function App() {
     }
     if (clipboard.mode === "cut") setClipboard(null);
     await refresh();
-    setStatus("Paste complete");
+    setStatus(t(locale, "status.pasteComplete"));
   }
 
   async function copyDirectory(fromPath: string, toPath: string) {
@@ -958,7 +1088,12 @@ function App() {
     }
     setPendingUpload(null);
     await refresh();
-    notify(files.length === 1 ? "Upload complete" : `${files.length} uploads complete`, "success");
+    notify(
+      files.length === 1
+        ? t(locale, "notify.uploadOne")
+        : t(locale, "notify.uploadMany", { count: files.length }),
+      "success",
+    );
   }
 
   function prepareUpload(files: File[], targetDirectory = currentPathRef.current) {
@@ -979,7 +1114,7 @@ function App() {
   }
 
   function commitPathEditor() {
-    const next = pathFromVisiblePath(pathEditorValue);
+    const next = pathFromDisplayPath(locale, pathEditorValue);
     setPathEditing(false);
     navigate(next);
   }
@@ -1148,47 +1283,47 @@ function App() {
         }}
       />
       <header className="toolbar">
-        <ToolbarButton label="Up" onClick={() => navigate(parentPath(currentPath))} disabled={currentPath === HOME_ROOT}>
+        <ToolbarButton label={t(locale, "toolbar.up")} onClick={() => navigate(parentPath(currentPath))} disabled={currentPath === HOME_ROOT}>
           <FolderUp size={17} />
         </ToolbarButton>
-        <ToolbarButton label="Refresh" onClick={() => void refresh()} disabled={isRefreshing}>
-          <RefreshCw size={17} />
+        <ToolbarButton label={t(locale, "toolbar.refresh")} onClick={() => void refresh()} disabled={isRefreshing}>
+          <RefreshCw size={17} className={isRefreshing ? "refresh-icon spinning" : "refresh-icon"} />
         </ToolbarButton>
-        <ToolbarButton label="New folder" onClick={() => void createFolder()}>
+        <ToolbarButton label={t(locale, "toolbar.newFolder")} onClick={() => void createFolder()}>
           <FolderPlus size={17} />
         </ToolbarButton>
-        <ToolbarButton label="New text file" onClick={() => void createFile(".txt")}>
+        <ToolbarButton label={t(locale, "toolbar.newTextFile")} onClick={() => void createFile(".txt")}>
           <FilePlus2 size={17} />
         </ToolbarButton>
-        <ToolbarButton label="Upload" onClick={() => uploadRef.current?.click()}>
+        <ToolbarButton label={t(locale, "toolbar.upload")} onClick={() => uploadRef.current?.click()}>
           <Upload size={17} />
         </ToolbarButton>
-        <ToolbarButton label="Copy" onClick={() => copyEntries("copy")} disabled={selectedCount === 0}>
+        <ToolbarButton label={t(locale, "toolbar.copy")} onClick={() => copyEntries("copy")} disabled={selectedCount === 0}>
           <Copy size={17} />
         </ToolbarButton>
-        <ToolbarButton label="Cut" onClick={() => copyEntries("cut")} disabled={selectedCount === 0}>
+        <ToolbarButton label={t(locale, "toolbar.cut")} onClick={() => copyEntries("cut")} disabled={selectedCount === 0}>
           <Scissors size={17} />
         </ToolbarButton>
-        <ToolbarButton label="Paste" onClick={() => void pasteInto(pasteTarget)} disabled={!clipboard}>
+        <ToolbarButton label={t(locale, "toolbar.paste")} onClick={() => void pasteInto(pasteTarget)} disabled={!clipboard}>
           <ClipboardPaste size={17} />
         </ToolbarButton>
-        <ToolbarButton label="Delete" onClick={() => void deleteEntries(selectedEntries)} disabled={selectedCount === 0}>
+        <ToolbarButton label={t(locale, "toolbar.delete")} onClick={() => void deleteEntries(selectedEntries)} disabled={selectedCount === 0}>
           <Trash2 size={17} />
         </ToolbarButton>
-        <div className="view-switch" role="group" aria-label="View mode">
-          <ToolbarButton label="Details view" onClick={() => setViewMode("details")} active={viewMode === "details"}>
+        <div className="view-switch" role="group" aria-label={t(locale, "view.mode")}>
+          <ToolbarButton label={t(locale, "toolbar.detailsView")} onClick={() => setViewMode("details")} active={viewMode === "details"}>
             <List size={17} />
           </ToolbarButton>
-          <ToolbarButton label="Icon view" onClick={() => setViewMode("icons")} active={viewMode === "icons"}>
+          <ToolbarButton label={t(locale, "toolbar.iconView")} onClick={() => setViewMode("icons")} active={viewMode === "icons"}>
             <LayoutGrid size={17} />
           </ToolbarButton>
-          <ToolbarButton label="Gallery view" onClick={() => setViewMode("gallery")} active={viewMode === "gallery"}>
+          <ToolbarButton label={t(locale, "toolbar.galleryView")} onClick={() => setViewMode("gallery")} active={viewMode === "gallery"}>
             <Images size={17} />
           </ToolbarButton>
         </div>
         <label className="search">
           <Search size={15} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this folder" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t(locale, "placeholder.search")} />
         </label>
       </header>
 
@@ -1203,7 +1338,7 @@ function App() {
               if (event.key === "Enter") commitPathEditor();
               if (event.key === "Escape") {
                 setPathEditing(false);
-                setPathEditorValue(visiblePath(currentPath));
+                setPathEditorValue(displayPath(locale, currentPath));
               }
             }}
           />
@@ -1211,7 +1346,9 @@ function App() {
           breadcrumbSegments(currentPath).map((segment, index) => (
             <React.Fragment key={segment.path}>
               {index > 0 ? <ChevronRight size={14} /> : null}
-              <button onClick={() => navigate(segment.path)}>{segment.label}</button>
+              <button onClick={() => navigate(segment.path)}>
+                {segment.path === HOME_ROOT ? t(locale, "path.home") : segment.label}
+              </button>
             </React.Fragment>
           ))
         )}
@@ -1219,16 +1356,16 @@ function App() {
 
       <section className="workspace">
         <aside className="tree">
-          <div className="pane-title">Locations</div>
-          <Tree node={tree} currentPath={currentPath} onOpen={navigate} />
+          <div className="pane-title">{t(locale, "pane.locations")}</div>
+          <Tree node={tree} currentPath={currentPath} locale={locale} onOpen={navigate} />
         </aside>
 
         <section className="files-pane" data-view={viewMode}>
           {viewMode === "details" ? (
             <div className="file-header">
-              <span>Name</span>
-              <span>Type</span>
-              <span>Size</span>
+              <span>{t(locale, "header.name")}</span>
+              <span>{t(locale, "header.type")}</span>
+              <span>{t(locale, "header.size")}</span>
             </div>
           ) : null}
           <div
@@ -1354,46 +1491,58 @@ function App() {
                       <span className="file-name">{entry.name}</span>
                     )}
                   </span>
-                  <span className="file-meta">{fileTypeLabel(entry)}</span>
+                  <span className="file-meta">{localizedFileType(locale, entry)}</span>
                   <span className="file-meta">{entry.kind === "directory" ? "--" : formatSize(entry.size)}</span>
                 </button>
               );
             })}
-            {visibleEntriesWithPending.length === 0 ? <div className="empty">This folder is empty.</div> : null}
+            {showLoadingState ? (
+              <div className="empty loading-state">
+                <RefreshCw size={16} className="refresh-icon spinning" />
+                <span>{t(locale, "loading.folder")}</span>
+              </div>
+            ) : null}
+            {showEmptyState ? (
+              <div className="empty">
+                {query.trim() ? t(locale, "empty.search") : t(locale, "empty.folder")}
+              </div>
+            ) : null}
             {selectionRect ? <div className="selection-rect" style={selectionRect as React.CSSProperties} /> : null}
           </div>
         </section>
 
         <aside className="details">
-          <div className="pane-title">Details</div>
+          <div className="pane-title">{t(locale, "pane.details")}</div>
           {detailsEntry ? (
             <div className="details-content">
               <div className="details-heading">
                 <FileIcon entry={detailsEntry} large />
                 <div>
                   <h2>{detailsEntry.name}</h2>
-                  <p>{fileTypeLabel(detailsEntry)}</p>
+                  <p>{localizedFileType(locale, detailsEntry)}</p>
                 </div>
               </div>
               <dl>
-                <dt>Path</dt>
-                <dd>{visiblePath(detailsEntry.path)}</dd>
-                <dt>Size</dt>
+                <dt>{t(locale, "details.path")}</dt>
+                <dd>{displayPath(locale, detailsEntry.path)}</dd>
+                <dt>{t(locale, "details.size")}</dt>
                 <dd>{detailsEntry.kind === "directory" ? "--" : formatSize(detailsEntry.size)}</dd>
-                <dt>Content type</dt>
+                <dt>{t(locale, "details.contentType")}</dt>
                 <dd>{detailsEntry.contentType || detailsEntry.kind}</dd>
               </dl>
               <div className="details-actions">
-                <button onClick={() => openEntry(detailsEntry)}>Open</button>
-                <button onClick={() => startRename(detailsEntry.path)}>Rename</button>
-                {detailsEntry.kind === "file" ? <button onClick={() => void downloadEntry(detailsEntry)}>Download</button> : null}
+                <button onClick={() => openEntry(detailsEntry)}>{t(locale, "action.open")}</button>
+                <button onClick={() => startRename(detailsEntry.path)}>{t(locale, "action.rename")}</button>
+                {detailsEntry.kind === "file" ? (
+                  <button onClick={() => void downloadEntry(detailsEntry)}>{t(locale, "action.download")}</button>
+                ) : null}
               </div>
               {preview ? <pre>{preview}</pre> : null}
             </div>
           ) : selectedCount > 1 ? (
-            <p>{selectedCount} items selected</p>
+            <p>{t(locale, "status.selectedMany", { count: selectedCount })}</p>
           ) : (
-            <p>Select a file or folder to inspect it.</p>
+            <p>{t(locale, "file.select")}</p>
           )}
         </aside>
       </section>
@@ -1423,14 +1572,18 @@ function App() {
         }}
       >
         <span>{status}</span>
-        <span>{selectedCount > 0 ? `${selectedCount} selected` : visiblePath(currentPath)}</span>
+        <span>
+          {selectedCount > 0
+            ? t(locale, "status.selected", { count: selectedCount })
+            : displayPath(locale, currentPath)}
+        </span>
       </footer>
 
       {draggingFiles ? (
         <div className="drop-overlay">
           <div>
-            <strong>Drop files here</strong>
-            <span>Upload to {visiblePath(currentPath)}</span>
+            <strong>{t(locale, "drop.title")}</strong>
+            <span>{t(locale, "drop.subtitle", { path: displayPath(locale, currentPath) })}</span>
           </div>
         </div>
       ) : null}
@@ -1438,17 +1591,22 @@ function App() {
       {pendingUpload ? (
         <div className="modal">
           <div className="dialog">
-            <h2>Overwrite existing files?</h2>
-            <p>{pendingUpload.conflicts.length} item{pendingUpload.conflicts.length === 1 ? "" : "s"} already exist in this folder.</p>
+            <h2>{t(locale, "dialog.overwriteTitle")}</h2>
+            <p>
+              {t(locale, "dialog.conflictMessage", {
+                count: pendingUpload.conflicts.length,
+                plural: pluralSuffix(locale, pendingUpload.conflicts.length),
+              })}
+            </p>
             <div className="conflicts">
               {pendingUpload.conflicts.map((path) => (
-                <div key={path}>{visiblePath(path)}</div>
+                <div key={path}>{displayPath(locale, path)}</div>
               ))}
             </div>
             <div className="dialog-actions">
-              <button onClick={() => setPendingUpload(null)}>Cancel</button>
-              <button onClick={() => void uploadFiles(pendingUpload.items, pendingUpload.targetDirectory, false)}>Keep both</button>
-              <button onClick={() => void uploadFiles(pendingUpload.items, pendingUpload.targetDirectory, true)}>Overwrite</button>
+              <button onClick={() => setPendingUpload(null)}>{t(locale, "action.cancel")}</button>
+              <button onClick={() => void uploadFiles(pendingUpload.items, pendingUpload.targetDirectory, false)}>{t(locale, "action.keepBoth")}</button>
+              <button onClick={() => void uploadFiles(pendingUpload.items, pendingUpload.targetDirectory, true)}>{t(locale, "action.overwrite")}</button>
             </div>
           </div>
         </div>
@@ -1457,17 +1615,27 @@ function App() {
   );
 }
 
-function Tree({ node, currentPath, onOpen }: { node: TreeNode; currentPath: string; onOpen: (path: string) => void }) {
+function Tree({
+  node,
+  currentPath,
+  locale,
+  onOpen,
+}: {
+  node: TreeNode;
+  currentPath: string;
+  locale: string;
+  onOpen: (path: string) => void;
+}) {
   return (
     <div className="tree-node">
       <button data-active={node.path === currentPath} onClick={() => onOpen(node.path)}>
         {node.path === HOME_ROOT ? <FolderOpen size={16} /> : <Folder size={16} />}
-        <span>{node.name}</span>
+        <span>{node.path === HOME_ROOT ? t(locale, "path.home") : node.name}</span>
       </button>
       {node.children.length > 0 ? (
         <div className="tree-children">
           {node.children.map((child) => (
-            <Tree key={child.path} node={child} currentPath={currentPath} onOpen={onOpen} />
+            <Tree key={child.path} node={child} currentPath={currentPath} locale={locale} onOpen={onOpen} />
           ))}
         </div>
       ) : null}
@@ -1508,10 +1676,13 @@ function ToolbarButton({
 function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: boolean }) {
   const size = large ? 34 : 18;
   const [thumbnail, setThumbnail] = React.useState("");
-  const label = fileTypeLabel(entry);
+  const type = fileTypeKind(entry);
+  const iconName = desktopFileIconName(entry);
+  const IconComponent = FILE_ICON_COMPONENTS[iconName];
+  const badge = fileExtensionBadge(entry);
 
   React.useEffect(() => {
-    if (label !== "Image" || entry.temporary) {
+    if (type !== "image" || entry.temporary) {
       setThumbnail("");
       return;
     }
@@ -1529,7 +1700,7 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
     return () => {
       cancelled = true;
     };
-  }, [entry.contentType, entry.path, entry.temporary, label]);
+  }, [entry.contentType, entry.path, entry.temporary, type]);
 
   if (thumbnail) {
     return (
@@ -1540,10 +1711,12 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
       />
     );
   }
-  if (entry.kind === "directory") return <Folder size={size} className="icon-folder" />;
-  if (label === "Image") return <FileImage size={size} className="icon-image" />;
-  if (label === "Code file" || label === "HTML document") return <FileCode2 size={size} className="icon-code" />;
-  return <FileText size={size} className="icon-file" />;
+  return (
+    <span className="file-icon" data-icon={iconName} data-large={large ? "true" : undefined}>
+      <IconComponent size={size} className="file-icon-svg" />
+      {badge ? <span className="file-icon-badge">{badge}</span> : null}
+    </span>
+  );
 }
 
 function decodeReadResult(file: Awaited<ReturnType<typeof appkits.FileSystem.read>>): string {

@@ -27,7 +27,7 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain("appkits.FileSystem.open({");
     expect(source).toContain("appkits.FileSystem.openers({");
     expect(source).toContain("function openEntryWithShell(");
-    expect(source).toContain('"Open With"');
+    expect(source).toContain('"action.openWith"');
     expect(source).toContain("opener.id");
     expect(source).not.toContain("setStatus(`Opened ${entry.name}`)");
   });
@@ -60,9 +60,25 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain('setViewMode("gallery")');
     expect(source).toContain("appkits.FileSystem.list(targetDirectory)");
     expect(source).toContain("mergeDirectoryListing(");
+    expect(source).toContain("loadingDirectories");
+    expect(source).toContain("loadedDirectories");
+    expect(styles).toContain(".refresh-icon.spinning");
+    expect(styles).toContain("@keyframes refresh-spin");
     expect(styles).toContain(".files-icons");
     expect(styles).toContain(".files-gallery");
     expect(styles).toContain(".file-thumbnail.large");
+  });
+
+  it("uses localized UI strings and shared desktop file icon ids", () => {
+    const source = readSource("src/main.tsx");
+    const styles = readSource("src/styles.css");
+
+    expect(source).toContain('appkits.Locale.current()');
+    expect(source).toContain('t(locale, "toolbar.refresh")');
+    expect(source).toContain("desktopFileIconName(entry)");
+    expect(source).toContain("fileExtensionBadge(entry)");
+    expect(styles).toContain('.file-icon[data-icon="file-executable"]');
+    expect(styles).toContain(".file-icon-badge");
   });
 
   it("follows the host theme while preserving the earlier light surface", () => {

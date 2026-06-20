@@ -6,7 +6,6 @@ import {
   childEntries,
   createTargetPath,
   desktopFileIconName,
-  fileExtensionBadge,
   fileTypeLabel,
   mergeDirectoryListing,
   pendingCreateEntry,
@@ -126,12 +125,16 @@ describe("file explorer model", () => {
   });
 
   it("maps visible breadcrumb paths back to desktop paths", () => {
-    expect(visiblePath("/home/agent/project/src")).toBe("Home/project/src");
+    expect(visiblePath("/home/agent/project/src")).toBe("home/project/src");
+    expect(pathFromVisiblePath("home/project/src")).toBe(
+      "/home/agent/project/src",
+    );
     expect(pathFromVisiblePath("Home/project/src")).toBe(
       "/home/agent/project/src",
     );
+    expect(pathFromVisiblePath("/home")).toBe(HOME_ROOT);
     expect(breadcrumbSegments("/home/agent/project/src").map((part) => part.label)).toEqual([
-      "Home",
+      "home",
       "project",
       "src",
     ]);
@@ -176,9 +179,6 @@ describe("file explorer model", () => {
     );
     expect(desktopFileIconName({ path: "/home/agent/editor.app", name: "editor.app", kind: "file" })).toBe(
       "file-executable",
-    );
-    expect(fileExtensionBadge({ path: "/home/agent/editor.app", name: "editor.app", kind: "file" })).toBe(
-      "APP",
     );
   });
 });

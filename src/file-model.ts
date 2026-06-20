@@ -1,4 +1,10 @@
+import {
+  getDesktopFileIconName,
+  type DesktopFileIconName,
+} from "@appkits-ai/sdk/desktop-icons";
+
 export const HOME_ROOT = "/home/agent";
+export const HOME_DISPLAY_NAME = "home";
 
 export interface ExplorerEntry {
   path: string;
@@ -39,23 +45,7 @@ export type FileTypeKind =
   | "text"
   | "file";
 
-export type DesktopFileIconName =
-  | "folder"
-  | "file"
-  | "file-code"
-  | "file-text"
-  | "file-markdown"
-  | "file-html"
-  | "file-image"
-  | "file-audio"
-  | "file-video"
-  | "file-archive"
-  | "file-pdf"
-  | "file-doc"
-  | "file-sheet"
-  | "file-slides"
-  | "file-db"
-  | "file-executable";
+export type { DesktopFileIconName };
 
 export interface TreeNode {
   path: string;
@@ -84,14 +74,8 @@ export interface SelectionState {
 
 export function filenameFromPath(path: string): string {
   const normalized = normalizePath(path);
-  if (normalized === HOME_ROOT) return "Home";
+  if (normalized === HOME_ROOT) return HOME_DISPLAY_NAME;
   return normalized.split("/").pop() || normalized;
-}
-
-export function fileExtension(name: string): string {
-  const trimmed = name.trim().toLowerCase();
-  const index = trimmed.lastIndexOf(".");
-  return index > 0 ? trimmed.slice(index) : "";
 }
 
 export function parentPath(path: string): string {
@@ -116,15 +100,19 @@ export function normalizePath(path: string): string {
 
 export function visiblePath(path: string): string {
   const normalized = normalizePath(path);
-  if (normalized === HOME_ROOT) return "Home";
-  return `Home/${normalized.slice(HOME_ROOT.length + 1)}`;
+  if (normalized === HOME_ROOT) return HOME_DISPLAY_NAME;
+  return `${HOME_DISPLAY_NAME}/${normalized.slice(HOME_ROOT.length + 1)}`;
 }
 
 export function pathFromVisiblePath(path: string): string {
   const trimmed = path.trim();
-  if (!trimmed || trimmed.toLowerCase() === "home") return HOME_ROOT;
-  if (trimmed.toLowerCase().startsWith("home/")) {
+  const normalized = trimmed.toLowerCase();
+  if (!trimmed || normalized === "home" || trimmed === "/home") return HOME_ROOT;
+  if (normalized.startsWith("home/")) {
     return normalizePath(`${HOME_ROOT}/${trimmed.slice(5)}`);
+  }
+  if (trimmed.startsWith("/home/") && !trimmed.startsWith(HOME_ROOT)) {
+    return normalizePath(`${HOME_ROOT}/${trimmed.slice("/home/".length)}`);
   }
   return normalizePath(trimmed);
 }
@@ -133,7 +121,7 @@ export function breadcrumbSegments(path: string): BreadcrumbSegment[] {
   const normalized = normalizePath(path);
   const relative = normalized === HOME_ROOT ? [] : normalized.slice(HOME_ROOT.length + 1).split("/");
   return [
-    { label: "Home", path: HOME_ROOT },
+    { label: HOME_DISPLAY_NAME, path: HOME_ROOT },
     ...relative.map((part, index) => ({
       label: part,
       path: `${HOME_ROOT}/${relative.slice(0, index + 1).join("/")}`,
@@ -207,7 +195,7 @@ export function buildDirectoryTree(entries: ExplorerEntry[]): TreeNode {
   for (const node of nodes.values()) {
     node.children.sort((a, b) => a.name.localeCompare(b.name));
   }
-  return nodes.get(HOME_ROOT) ?? { path: HOME_ROOT, name: "Home", children: [] };
+  return nodes.get(HOME_ROOT) ?? { path: HOME_ROOT, name: HOME_DISPLAY_NAME, children: [] };
 }
 
 export function searchEntries(
@@ -374,50 +362,11 @@ export function fileTypeLabel(entry: ExplorerEntry | null | undefined): string {
 }
 
 export function desktopFileIconName(entry: ExplorerEntry): DesktopFileIconName {
-  switch (fileTypeKind(entry)) {
-    case "folder":
-      return "folder";
-    case "app":
-      return "file-executable";
-    case "image":
-      return "file-image";
-    case "audio":
-      return "file-audio";
-    case "video":
-      return "file-video";
-    case "archive":
-      return "file-archive";
-    case "pdf":
-      return "file-pdf";
-    case "document":
-      return "file-doc";
-    case "spreadsheet":
-      return "file-sheet";
-    case "presentation":
-      return "file-slides";
-    case "database":
-      return "file-db";
-    case "markdown":
-      return "file-markdown";
-    case "html":
-      return "file-html";
-    case "json":
-    case "code":
-      return "file-code";
-    case "text":
-      return "file-text";
-    case "select":
-    case "file":
-      return "file";
-  }
-}
-
-export function fileExtensionBadge(entry: ExplorerEntry): string {
-  if (entry.kind === "directory") return "";
-  const extension = fileExtension(entry.name).replace(/^\./, "");
-  if (!extension || extension.length > 5) return "";
-  const badge = extension === "markdown" ? "md" : extension === "jpeg" ? "jpg" : extension;
-  return badge.toUpperCase();
+  return getDesktopFileIconName({
+    name: entry.name,
+    kind: entry.kind,
+    contentType: entry.contentType,
+  });
 }
 
 export function isTextPreviewable(entry: ExplorerEntry): boolean {

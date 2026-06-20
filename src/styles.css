@@ -531,9 +531,8 @@ button:disabled {
 }
 
 .loading-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  place-items: center;
 }
 
 .selection-rect {
@@ -550,7 +549,6 @@ button:disabled {
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
-  color: var(--icon-file);
 }
 
 .file-icon[data-large="true"] {
@@ -558,91 +556,39 @@ button:disabled {
   height: 48px;
 }
 
-.file-icon[data-icon="folder"] {
-  color: var(--icon-folder);
-}
-
-.file-icon[data-icon="file-code"],
-.file-icon[data-icon="file-markdown"],
-.file-icon[data-icon="file-html"] {
-  color: var(--icon-code);
-}
-
-.file-icon[data-icon="file-image"] {
-  color: var(--icon-image);
-}
-
-.file-icon[data-icon="file-audio"] {
-  color: var(--icon-audio);
-}
-
-.file-icon[data-icon="file-video"] {
-  color: var(--icon-video);
-}
-
-.file-icon[data-icon="file-archive"] {
-  color: var(--icon-archive);
-}
-
-.file-icon[data-icon="file-pdf"] {
-  color: var(--icon-pdf);
-}
-
-.file-icon[data-icon="file-doc"] {
-  color: var(--icon-doc);
-}
-
-.file-icon[data-icon="file-sheet"] {
-  color: var(--icon-sheet);
-}
-
-.file-icon[data-icon="file-slides"] {
-  color: var(--icon-slides);
-}
-
-.file-icon[data-icon="file-db"] {
-  color: var(--icon-db);
-}
-
-.file-icon[data-icon="file-executable"] {
-  color: var(--icon-app);
-}
-
-.file-icon-badge {
-  position: absolute;
-  right: -8px;
-  bottom: -5px;
-  max-width: 30px;
-  overflow: hidden;
-  border: 1px solid var(--app-surface);
-  border-radius: 4px;
-  padding: 1px 3px;
-  background: currentColor;
-  color: var(--app-panel-strong);
-  font-size: 8px;
-  font-weight: 800;
-  line-height: 1;
-  text-overflow: ellipsis;
-}
-
-.file-icon[data-large="true"] .file-icon-badge {
-  right: -6px;
-  bottom: 2px;
-  max-width: 38px;
-  font-size: 9px;
-}
-
+.file-icon-asset,
+.file-icon-image,
 .file-thumbnail {
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
+}
+
+.file-icon-asset,
+.file-icon-image {
+  object-fit: contain;
+}
+
+.file-thumbnail {
   border-radius: 5px;
   object-fit: cover;
 }
 
+.file-icon-image {
+  border-radius: 6px;
+}
+
+.file-icon-image.large,
 .file-thumbnail.large {
   width: 72px;
   height: 72px;
+}
+
+.file-icon-image.large {
+  border-radius: 12px;
+}
+
+.file-thumbnail.large {
   border: 1px solid var(--app-border-soft);
   background: var(--app-panel);
 }

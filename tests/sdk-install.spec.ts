@@ -12,6 +12,7 @@ describe("AppKits SDK install guard", () => {
     expect(script).toContain('manifest.name !== "@appkits-ai/sdk"');
     expect(script).toContain('protocol.includes("APPKITS_DESKTOP_REQUEST")');
     expect(script).toContain('!protocol.includes("W3KITS_DESKTOP_REQUEST")');
+    expect(script).toContain("dist/desktop-icons.d.ts");
     expect(script).toContain('manifest.name === "@appkits-ai/ui"');
     expect(script).toContain("dist/components/button.d.ts");
     expect(script).toContain("appkits_sdk_invalid");

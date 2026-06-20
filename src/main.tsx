@@ -1,21 +1,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import {
-  AppWindow,
   ChevronRight,
   ClipboardPaste,
   Copy,
-  Database,
-  File,
-  FileArchive,
-  FileAudio2,
-  FileCode2,
-  FileImage,
   FilePlus2,
-  FileSliders,
-  FileSpreadsheet,
-  FileText,
-  FileVideo2,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -29,7 +18,9 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { parseAppKitsAppFile } from "@appkits-ai/sdk/app-file";
 import * as appkits from "@appkits-ai/sdk/client";
+import { getDesktopIconAssetPath } from "@appkits-ai/sdk/desktop-icons";
 import { Button } from "@appkits-ai/ui";
 import {
   HOME_ROOT,
@@ -38,7 +29,6 @@ import {
   childEntries,
   createTargetPath,
   desktopFileIconName,
-  fileExtensionBadge,
   fileTypeKind,
   filenameFromPath,
   formatSize,
@@ -59,7 +49,6 @@ import {
   uniquePath,
   uploadTargets,
   visiblePath,
-  type DesktopFileIconName,
   type ExplorerEntry,
   type FileTypeKind,
   type PendingCreateKind,
@@ -70,27 +59,7 @@ import {
 import { pluralSuffix, t, type TranslationKey } from "./i18n";
 import "./styles.css";
 
-const FILE_ICON_COMPONENTS: Record<
-  DesktopFileIconName,
-  React.ComponentType<{ size?: number; className?: string }>
-> = {
-  folder: Folder,
-  file: File,
-  "file-code": FileCode2,
-  "file-text": FileText,
-  "file-markdown": FileCode2,
-  "file-html": FileCode2,
-  "file-image": FileImage,
-  "file-audio": FileAudio2,
-  "file-video": FileVideo2,
-  "file-archive": FileArchive,
-  "file-pdf": FileText,
-  "file-doc": FileText,
-  "file-sheet": FileSpreadsheet,
-  "file-slides": FileSliders,
-  "file-db": Database,
-  "file-executable": AppWindow,
-};
+const DEFAULT_FILE_ICON_ASSET = "/icons/stitch/document_icon.svg";
 
 type ContextMenuState =
   | { x: number; y: number; type: "background"; targetDirectory: string }
@@ -198,19 +167,25 @@ function localizedAppTitle(locale: string | undefined): string {
 }
 
 function displayPath(locale: string | undefined, path: string): string {
-  const visible = visiblePath(path);
-  const home = t(locale, "path.home");
-  return visible === "Home" ? home : `${home}${visible.slice("Home".length)}`;
+  void locale;
+  return visiblePath(path);
 }
 
 function pathFromDisplayPath(locale: string | undefined, path: string): string {
   const trimmed = path.trim();
   const home = t(locale, "path.home");
-  if (home !== "Home" && trimmed.toLowerCase() === home.toLowerCase()) {
-    return pathFromVisiblePath("Home");
+  const aliases = [home, "home", "Home", "主页"];
+  const matchedAlias = aliases.find(
+    (alias) => trimmed.toLowerCase() === alias.toLowerCase(),
+  );
+  if (matchedAlias) {
+    return pathFromVisiblePath("home");
   }
-  if (home !== "Home" && trimmed.toLowerCase().startsWith(`${home.toLowerCase()}/`)) {
-    return pathFromVisiblePath(`Home/${trimmed.slice(home.length + 1)}`);
+  const pathAlias = aliases.find((alias) =>
+    trimmed.toLowerCase().startsWith(`${alias.toLowerCase()}/`),
+  );
+  if (pathAlias) {
+    return pathFromVisiblePath(`home/${trimmed.slice(pathAlias.length + 1)}`);
   }
   return pathFromVisiblePath(trimmed);
 }
@@ -253,7 +228,7 @@ function App() {
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreate | null>(null);
   const [pendingUpload, setPendingUpload] = React.useState<PendingUpload | null>(null);
   const [draggingFiles, setDraggingFiles] = React.useState(false);
-  const [loadingDirectories, setLoadingDirectories] = React.useState<Set<string>>(() => new Set());
+  const [loadingDirectories, setLoadingDirectories] = React.useState<Set<string>>(() => new Set([HOME_ROOT]));
   const [loadedDirectories, setLoadedDirectories] = React.useState<Set<string>>(() => new Set());
   const [locale, setLocale] = React.useState(systemLocale);
   const [status, setStatus] = React.useState(() => t(systemLocale(), "status.ready"));
@@ -270,6 +245,7 @@ function App() {
   const selectedPathsRef = React.useRef<string[]>([]);
   const entriesRef = React.useRef<ExplorerEntry[]>([]);
   const currentPathRef = React.useRef(currentPath);
+  const loadedDirectoriesRef = React.useRef(loadedDirectories);
   const pendingLaunchSelectionRef = React.useRef<string | null>(null);
   const pendingCreateCommitRef = React.useRef(false);
   const contextMenuActionsRef = React.useRef(new Map<string, () => void>());
@@ -293,6 +269,10 @@ function App() {
   React.useEffect(() => {
     entriesRef.current = entries;
   }, [entries]);
+
+  React.useEffect(() => {
+    loadedDirectoriesRef.current = loadedDirectories;
+  }, [loadedDirectories]);
 
   React.useEffect(() => {
     currentPathRef.current = currentPath;
@@ -381,11 +361,14 @@ function App() {
     void appkits.Launch.params().then((params) => {
       const next = pathFromLaunchParams(params);
       pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
+      markDirectoryLoading(next);
       setCurrentPath(next);
     });
     const offLaunch = appkits.Launch.onChange((params) => {
+      const next = pathFromLaunchParams(params);
       pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
-      setCurrentPath(pathFromLaunchParams(params));
+      markDirectoryLoading(next);
+      setCurrentPath(next);
       setSelectedPaths([]);
       setActivePath(null);
     });
@@ -802,10 +785,23 @@ function App() {
     }
   }
 
+  function markDirectoryLoading(path: string) {
+    const next = normalizePath(path);
+    if (loadedDirectoriesRef.current.has(next)) return;
+    setLoadingDirectories((current) => {
+      if (current.has(next)) return current;
+      const updated = new Set(current);
+      updated.add(next);
+      return updated;
+    });
+  }
+
   function navigate(path: string) {
+    const next = normalizePath(path);
     setPendingCreate(null);
     setRenamingPath(null);
-    setCurrentPath(normalizePath(path));
+    markDirectoryLoading(next);
+    setCurrentPath(next);
     setSelectedPaths([]);
     setActivePath(null);
     void appkits.ContextMenu.close().catch(() => undefined);
@@ -1497,9 +1493,12 @@ function App() {
               );
             })}
             {showLoadingState ? (
-              <div className="empty loading-state">
+              <div
+                className="empty loading-state"
+                role="status"
+                aria-label={t(locale, "loading.folder")}
+              >
                 <RefreshCw size={16} className="refresh-icon spinning" />
-                <span>{t(locale, "loading.folder")}</span>
               </div>
             ) : null}
             {showEmptyState ? (
@@ -1674,12 +1673,12 @@ function ToolbarButton({
 }
 
 function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: boolean }) {
-  const size = large ? 34 : 18;
   const [thumbnail, setThumbnail] = React.useState("");
+  const [appIconUrl, setAppIconUrl] = React.useState("");
+  const [appIconFailed, setAppIconFailed] = React.useState(false);
   const type = fileTypeKind(entry);
   const iconName = desktopFileIconName(entry);
-  const IconComponent = FILE_ICON_COMPONENTS[iconName];
-  const badge = fileExtensionBadge(entry);
+  const iconAsset = getDesktopIconAssetPath(iconName) || DEFAULT_FILE_ICON_ASSET;
 
   React.useEffect(() => {
     if (type !== "image" || entry.temporary) {
@@ -1702,6 +1701,31 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
     };
   }, [entry.contentType, entry.path, entry.temporary, type]);
 
+  React.useEffect(() => {
+    if (type !== "app" || entry.temporary) {
+      setAppIconUrl("");
+      setAppIconFailed(false);
+      return;
+    }
+    let cancelled = false;
+    void appkits.FileSystem.read(entry.path)
+      .then((file) => {
+        if (cancelled) return;
+        const appFile = parseAppKitsAppFile(decodeReadResult(file));
+        setAppIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl || "");
+        setAppIconFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAppIconUrl("");
+          setAppIconFailed(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.path, entry.temporary, entry.updatedAt, type]);
+
   if (thumbnail) {
     return (
       <img
@@ -1711,10 +1735,19 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
       />
     );
   }
+  if (appIconUrl && !appIconFailed) {
+    return (
+      <img
+        src={appIconUrl}
+        alt=""
+        className={large ? "file-icon-image large" : "file-icon-image"}
+        onError={() => setAppIconFailed(true)}
+      />
+    );
+  }
   return (
     <span className="file-icon" data-icon={iconName} data-large={large ? "true" : undefined}>
-      <IconComponent size={size} className="file-icon-svg" />
-      {badge ? <span className="file-icon-badge">{badge}</span> : null}
+      <img src={iconAsset} alt="" className="file-icon-asset" />
     </span>
   );
 }

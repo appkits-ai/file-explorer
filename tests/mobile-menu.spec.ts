@@ -76,9 +76,10 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain('appkits.Locale.current()');
     expect(source).toContain('t(locale, "toolbar.refresh")');
     expect(source).toContain("desktopFileIconName(entry)");
-    expect(source).toContain("fileExtensionBadge(entry)");
-    expect(styles).toContain('.file-icon[data-icon="file-executable"]');
-    expect(styles).toContain(".file-icon-badge");
+    expect(source).toContain("getDesktopIconAssetPath(iconName)");
+    expect(source).toContain("parseAppKitsAppFile");
+    expect(styles).toContain(".file-icon-asset");
+    expect(styles).toContain(".file-icon-image");
   });
 
   it("follows the host theme while preserving the earlier light surface", () => {

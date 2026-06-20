@@ -3,10 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const CORE_REF = "1fa8f541fb0bb853ec359740c03aec4c61bffa3b";
+const CORE_REF = "c620f02597980c48cebcb0c46e75adcfc29c1ad9";
 const sdkInstallRoot = path.resolve("node_modules/@appkits-ai/sdk");
 const uiInstallRoot = path.resolve("node_modules/@appkits-ai/ui");
 const sdkClientTypes = path.join(sdkInstallRoot, "dist/client/index.d.ts");
+const sdkDesktopIconTypes = path.join(sdkInstallRoot, "dist/desktop-icons.d.ts");
 const sdkPackageJson = path.join(sdkInstallRoot, "package.json");
 const sdkClientProtocol = path.join(sdkInstallRoot, "dist/client/protocol.js");
 const uiComponentTypes = path.join(uiInstallRoot, "dist/components/button.d.ts");
@@ -40,7 +41,11 @@ if (!installedSdkIsCurrent() || !installedUiIsCurrent()) {
 }
 
 function installedSdkIsCurrent() {
-  if (!fs.existsSync(sdkClientTypes) || !fs.existsSync(sdkPackageJson)) {
+  if (
+    !fs.existsSync(sdkClientTypes) ||
+    !fs.existsSync(sdkDesktopIconTypes) ||
+    !fs.existsSync(sdkPackageJson)
+  ) {
     return false;
   }
 

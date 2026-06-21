@@ -69,6 +69,21 @@ describe("File Explorer mobile menu contracts", () => {
     expect(styles).toContain(".file-thumbnail.large");
   });
 
+  it("treats empty host listings as loaded folders", () => {
+    const source = readSource("src/main.tsx");
+    const refreshStart = source.indexOf(
+      "const result = await appkits.FileSystem.list(targetDirectory);",
+    );
+    const catchStart = source.indexOf("} catch {", refreshStart);
+    const successPath = source.slice(refreshStart, catchStart);
+
+    expect(successPath).toContain("const listedEntries = result.entries.map");
+    expect(successPath).toContain("next.add(targetDirectory)");
+    expect(successPath).toContain('t(locale, "status.folderItems"');
+    expect(successPath).not.toContain("notify(");
+    expect(successPath).not.toContain("status.refreshFailed");
+  });
+
   it("uses localized UI strings and shared desktop file icon ids", () => {
     const source = readSource("src/main.tsx");
     const styles = readSource("src/styles.css");

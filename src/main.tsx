@@ -67,11 +67,19 @@ type ContextMenuState =
   | { x: number; y: number; type: "entry"; targetDirectory: string; entry: ExplorerEntry };
 
 type ExplorerViewMode = "details" | "icons" | "gallery";
+type HostContextMenuLabel = {
+  type: "localized";
+  values: Record<string, string>;
+};
+type HostContextMenuIcon = {
+  type: "token";
+  value: string;
+};
 type HostContextMenuCommandItem = {
-  type?: "item";
+  type: "action";
   id: string;
-  label: string;
-  icon?: string;
+  label: HostContextMenuLabel;
+  icon?: HostContextMenuIcon;
   shortcut?: string;
   checked?: boolean;
   disabled?: boolean;
@@ -84,8 +92,8 @@ type HostContextMenuSeparatorItem = {
 type HostContextMenuSubmenuItem = {
   type: "submenu";
   id?: string;
-  label: string;
-  icon?: string;
+  label: HostContextMenuLabel;
+  icon?: HostContextMenuIcon;
   disabled?: boolean;
   items: HostContextMenuItem[];
 };
@@ -258,8 +266,8 @@ function App() {
 
   React.useEffect(() => {
     applyTheme(systemTheme());
-    void appkits.Theme.current().then(applyTheme).catch(() => undefined);
-    return appkits.Theme.onChange(applyTheme);
+    void appkits.theme.current().then(applyTheme).catch(() => undefined);
+    return appkits.theme.onChange(applyTheme);
   }, []);
 
   React.useEffect(() => {
@@ -288,7 +296,7 @@ function App() {
     });
     setStatus(t(locale, "status.refreshing", { path: displayPath(locale, targetDirectory) }));
     try {
-      const result = await appkits.FileSystem.list(targetDirectory);
+      const result = await appkits.files.list(targetDirectory);
       const listedEntries = result.entries.map((entry) => ({
         path: normalizePath(entry.path),
         name: entry.name || filenameFromPath(entry.path),
@@ -353,18 +361,18 @@ function App() {
     const applyLocale = (nextLocale: string | undefined) => {
       const resolvedLocale = nextLocale || systemLocale();
       setLocale(resolvedLocale);
-      void appkits.Window.setTitle(localizedAppTitle(resolvedLocale));
+      void appkits.window.setTitle(localizedAppTitle(resolvedLocale));
     };
     applyLocale(systemLocale());
-    void appkits.Locale.current().then(applyLocale).catch(() => undefined);
-    const offLocale = appkits.Locale.onChange(applyLocale);
-    void appkits.Launch.params().then((params) => {
+    void appkits.locale.current().then(applyLocale).catch(() => undefined);
+    const offLocale = appkits.locale.onChange(applyLocale);
+    void appkits.launch.params().then((params) => {
       const next = pathFromLaunchParams(params);
       pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
       markDirectoryLoading(next);
       setCurrentPath(next);
     });
-    const offLaunch = appkits.Launch.onChange((params) => {
+    const offLaunch = appkits.launch.onChange((params) => {
       const next = pathFromLaunchParams(params);
       pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
       markDirectoryLoading(next);
@@ -403,7 +411,7 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    return appkits.ContextMenu.onSelect((itemId) => {
+    return appkits.contextMenu.onSelect((itemId) => {
       const action = contextMenuActionsRef.current.get(itemId);
       contextMenuActionsRef.current.clear();
       action?.();
@@ -451,7 +459,7 @@ function App() {
       return;
     }
     let cancelled = false;
-    void appkits.FileSystem.read(detailsEntry.path)
+    void appkits.files.read(detailsEntry.path)
       .then((file) => {
         if (!cancelled) setPreview(decodeReadResult(file).slice(0, 4000));
       })
@@ -475,6 +483,14 @@ function App() {
   async function openContextMenu(menu: ContextMenuState) {
     const actions = new Map<string, () => void>();
     const targetItems = menu.type === "entry" ? [menu.entry] : selectedEntries;
+    const hostLabel = (value: string): HostContextMenuLabel => ({
+      type: "localized",
+      values: { en: value },
+    });
+    const hostIcon = (token: string): HostContextMenuIcon => ({
+      type: "token",
+      value: token,
+    });
     const item = (
       id: string,
       label: string,
@@ -487,10 +503,10 @@ function App() {
         shortcut?: string;
       } = {},
     ): HostContextMenuCommandItem => ({
-      type: "item",
+      type: "action",
       id: registerContextAction(actions, id, action),
-      label,
-      icon,
+      label: hostLabel(label),
+      icon: hostIcon(icon),
       shortcut: options.shortcut,
       checked: options.checked,
       disabled: options.disabled,
@@ -508,8 +524,8 @@ function App() {
     ): HostContextMenuItem => ({
       type: "submenu",
       id,
-      label,
-      icon,
+      label: hostLabel(label),
+      icon: hostIcon(icon),
       items,
     });
     const viewItems: HostContextMenuItem[] = [
@@ -547,7 +563,7 @@ function App() {
     ): Promise<ShellFileOpenerSummary[]> => {
       if (!entry || entry.kind !== "file") return [];
       try {
-        const result = await appkits.FileSystem.openers({
+        const result = await appkits.files.openers({
           path: entry.path,
           name: entry.name,
           kind: "file",
@@ -740,7 +756,7 @@ function App() {
       (entry): entry is HostContextMenuItem => Boolean(entry),
     );
     contextMenuActionsRef.current = actions;
-    void appkits.ContextMenu.open({
+    void appkits.contextMenu.open({
       x: menu.x,
       y: menu.y,
       items: hostMenuItems as appkits.AppKitsContextMenuItem[],
@@ -804,7 +820,7 @@ function App() {
     setCurrentPath(next);
     setSelectedPaths([]);
     setActivePath(null);
-    void appkits.ContextMenu.close().catch(() => undefined);
+    void appkits.contextMenu.close().catch(() => undefined);
   }
 
   function setSingleSelection(path: string | null) {
@@ -820,7 +836,7 @@ function App() {
     setSingleSelection(entry.path);
     setPreview("");
     setStatus(t(locale, "status.opening", { name: entry.name }));
-    void appkits.FileSystem.open({
+    void appkits.files.open({
       path: entry.path,
       name: entry.name,
       kind: "file",
@@ -848,7 +864,7 @@ function App() {
     setSingleSelection(entry.path);
     setPreview("");
     setStatus(t(locale, "status.opening", { name: entry.name }));
-    void appkits.FileSystem.open({
+    void appkits.files.open({
       path: entry.path,
       name: entry.name,
       kind: "file",
@@ -909,7 +925,7 @@ function App() {
         : `${t(locale, "new.untitled")}${extension}`;
     const path = uniquePath(entriesRef.current, directory, defaultName);
     const pendingPath = pendingCreatePath(directory, kind);
-    void appkits.ContextMenu.close().catch(() => undefined);
+    void appkits.contextMenu.close().catch(() => undefined);
     setPendingCreate({ kind, directory, extension: kind === "file" ? extension : undefined });
     setRenamingPath(pendingPath);
     setRenameValue(filenameFromPath(path));
@@ -946,10 +962,10 @@ function App() {
           return;
         }
         if (pending.kind === "directory") {
-          await appkits.FileSystem.mkdir(target);
+          await appkits.files.mkdir(target);
         } else {
           const extension = pending.extension || ".txt";
-          await appkits.FileSystem.write({
+          await appkits.files.write({
             path: target,
             body: TEXT_FILE_BODY[extension],
             contentType: TEXT_FILE_TYPE[extension],
@@ -969,7 +985,7 @@ function App() {
     setRenamingPath(null);
     if (!commit || !entry || !nextName || nextName === entry.name) return;
     const target = joinPath(parentPath(entry.path), nextName);
-    await appkits.FileSystem.move(entry.path, target);
+    await appkits.files.move(entry.path, target);
     await refresh();
     setSingleSelection(target);
     setStatus(t(locale, "status.itemRenamed"));
@@ -987,7 +1003,7 @@ function App() {
       }),
     );
     try {
-      for (const entry of items) await appkits.FileSystem.delete(entry.path);
+      for (const entry of items) await appkits.files.delete(entry.path);
       setSelectedPaths([]);
       setActivePath(null);
       await refresh();
@@ -1016,15 +1032,15 @@ function App() {
       if (entry.kind === "directory") {
         await copyDirectory(entry.path, target);
       } else {
-        const file = await appkits.FileSystem.read(entry.path);
-        await appkits.FileSystem.write({
+        const file = await appkits.files.read(entry.path);
+        await appkits.files.write({
           path: target,
           body: file.body,
           bodyBase64: file.bodyBase64,
           contentType: file.contentType || entry.contentType,
         });
       }
-      if (clipboard.mode === "cut") await appkits.FileSystem.delete(entry.path);
+      if (clipboard.mode === "cut") await appkits.files.delete(entry.path);
     }
     if (clipboard.mode === "cut") setClipboard(null);
     await refresh();
@@ -1032,16 +1048,16 @@ function App() {
   }
 
   async function copyDirectory(fromPath: string, toPath: string) {
-    await appkits.FileSystem.mkdir(toPath);
+    await appkits.files.mkdir(toPath);
     const descendants = entriesRef.current
       .filter((entry) => entry.path.startsWith(`${fromPath}/`))
       .sort((left, right) => (left.kind === right.kind ? left.path.localeCompare(right.path) : left.kind === "directory" ? -1 : 1));
     for (const child of descendants) {
       const target = `${toPath}${child.path.slice(fromPath.length)}`;
-      if (child.kind === "directory") await appkits.FileSystem.mkdir(target);
+      if (child.kind === "directory") await appkits.files.mkdir(target);
       else {
-        const file = await appkits.FileSystem.read(child.path);
-        await appkits.FileSystem.write({
+        const file = await appkits.files.read(child.path);
+        await appkits.files.write({
           path: target,
           body: file.body,
           bodyBase64: file.bodyBase64,
@@ -1053,7 +1069,7 @@ function App() {
 
   async function downloadEntry(entry: ExplorerEntry) {
     if (entry.kind !== "file") return;
-    const file = await appkits.FileSystem.read(entry.path);
+    const file = await appkits.files.read(entry.path);
     const blob = file.bodyBase64
       ? base64ToBlob(file.bodyBase64, file.contentType || entry.contentType)
       : new Blob([file.body || ""], { type: file.contentType || entry.contentType || "application/octet-stream" });
@@ -1076,7 +1092,7 @@ function App() {
     );
     for (const [index, file] of files.entries()) {
       const target = targets[index]?.path || joinPath(targetDirectory, sanitizeFilename(file.name) || "upload.bin");
-      await appkits.FileSystem.write({
+      await appkits.files.write({
         path: target,
         bodyBase64: await fileToBase64(file),
         contentType: file.type || "application/octet-stream",
@@ -1686,7 +1702,7 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
       return;
     }
     let cancelled = false;
-    void appkits.FileSystem.read(entry.path)
+    void appkits.files.read(entry.path)
       .then((file) => {
         if (cancelled || !file.bodyBase64) return;
         const contentType =
@@ -1708,7 +1724,7 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
       return;
     }
     let cancelled = false;
-    void appkits.FileSystem.read(entry.path)
+    void appkits.files.read(entry.path)
       .then((file) => {
         if (cancelled) return;
         const appFile = parseAppKitsAppFile(decodeReadResult(file));
@@ -1745,6 +1761,14 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
       />
     );
   }
+  if (type === "app") {
+    return (
+      <span
+        className={large ? "file-app-icon-placeholder large" : "file-app-icon-placeholder"}
+        aria-hidden="true"
+      />
+    );
+  }
   return (
     <span className="file-icon" data-icon={iconName} data-large={large ? "true" : undefined}>
       <img src={iconAsset} alt="" className="file-icon-asset" />
@@ -1752,7 +1776,7 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
   );
 }
 
-function decodeReadResult(file: Awaited<ReturnType<typeof appkits.FileSystem.read>>): string {
+function decodeReadResult(file: Awaited<ReturnType<typeof appkits.files.read>>): string {
   if (typeof file.body === "string") return file.body;
   if (!file.bodyBase64) return "";
   try {
@@ -1775,7 +1799,7 @@ function base64ToBlob(bodyBase64: string, contentType?: string): Blob {
 }
 
 function notify(title: string, variant: "success" | "error" | "info" = "info") {
-  void appkits.Notification.show({ title, variant }).catch(() => undefined);
+  void appkits.notifications.show({ title, variant }).catch(() => undefined);
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

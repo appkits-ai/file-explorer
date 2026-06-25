@@ -558,7 +558,8 @@ button:disabled {
 
 .file-icon-asset,
 .file-icon-image,
-.file-thumbnail {
+.file-thumbnail,
+.file-app-icon-placeholder {
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
@@ -579,7 +580,8 @@ button:disabled {
 }
 
 .file-icon-image.large,
-.file-thumbnail.large {
+.file-thumbnail.large,
+.file-app-icon-placeholder.large {
   width: 72px;
   height: 72px;
 }

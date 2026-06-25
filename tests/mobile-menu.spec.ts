@@ -9,14 +9,23 @@ describe("File Explorer mobile menu contracts", () => {
   it("delegates context menus to the parent shell", () => {
     const source = readSource("src/main.tsx");
 
-    expect(source).toContain("appkits.ContextMenu.open({");
-    expect(source).toContain("appkits.ContextMenu.onSelect");
+    expect(source).toContain("appkits.contextMenu.open({");
+    expect(source).toContain("appkits.contextMenu.onSelect");
     expect(source).toContain("contextMenuActionsRef");
+    expect(source).toContain('type: "action"');
     expect(source).toContain('type: "separator"');
     expect(source).toContain('type: "submenu"');
+    expect(source).toContain('type: "localized"');
+    expect(source).toContain('type: "token"');
+    expect(source).toContain("label: hostLabel(label)");
+    expect(source).toContain("icon: hostIcon(icon)");
+    expect(source).toContain("values: { en: value }");
+    expect(source).toContain("value: token");
     expect(source).toContain("shortcut: options.shortcut");
     expect(source).toContain("checked: options.checked");
     expect(source).toContain('"gallery"');
+    expect(source).not.toContain('type: "item"');
+    expect(source).not.toContain('type?: "item"');
     expect(source).not.toContain("function ContextMenu(");
     expect(source).not.toContain('className="context-menu"');
   });
@@ -24,8 +33,8 @@ describe("File Explorer mobile menu contracts", () => {
   it("delegates file opening and open-with choices to the parent shell", () => {
     const source = readSource("src/main.tsx");
 
-    expect(source).toContain("appkits.FileSystem.open({");
-    expect(source).toContain("appkits.FileSystem.openers({");
+    expect(source).toContain("appkits.files.open({");
+    expect(source).toContain("appkits.files.openers({");
     expect(source).toContain("function openEntryWithShell(");
     expect(source).toContain('"action.openWith"');
     expect(source).toContain("opener.id");
@@ -58,7 +67,7 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain('React.useState<ExplorerViewMode>("details")');
     expect(source).toContain('setViewMode("icons")');
     expect(source).toContain('setViewMode("gallery")');
-    expect(source).toContain("appkits.FileSystem.list(targetDirectory)");
+    expect(source).toContain("appkits.files.list(targetDirectory)");
     expect(source).toContain("mergeDirectoryListing(");
     expect(source).toContain("loadingDirectories");
     expect(source).toContain("loadedDirectories");
@@ -72,7 +81,7 @@ describe("File Explorer mobile menu contracts", () => {
   it("treats empty host listings as loaded folders", () => {
     const source = readSource("src/main.tsx");
     const refreshStart = source.indexOf(
-      "const result = await appkits.FileSystem.list(targetDirectory);",
+      "const result = await appkits.files.list(targetDirectory);",
     );
     const catchStart = source.indexOf("} catch {", refreshStart);
     const successPath = source.slice(refreshStart, catchStart);
@@ -87,22 +96,33 @@ describe("File Explorer mobile menu contracts", () => {
   it("uses localized UI strings and shared desktop file icon ids", () => {
     const source = readSource("src/main.tsx");
     const styles = readSource("src/styles.css");
+    const fileIconSource = source.slice(
+      source.indexOf("function FileIcon("),
+      source.indexOf("function decodeReadResult("),
+    );
 
-    expect(source).toContain('appkits.Locale.current()');
+    expect(source).toContain('appkits.locale.current()');
     expect(source).toContain('t(locale, "toolbar.refresh")');
     expect(source).toContain("desktopFileIconName(entry)");
     expect(source).toContain("getDesktopIconAssetPath(iconName)");
     expect(source).toContain("parseAppKitsAppFile");
+    expect(fileIconSource).toContain("appFile?.marketplaceIconUrl || appFile?.iconUrl || \"\"");
+    expect(fileIconSource).toContain('if (type === "app")');
+    expect(fileIconSource.indexOf('if (type === "app")')).toBeLessThan(
+      fileIconSource.indexOf('<span className="file-icon"'),
+    );
+    expect(fileIconSource).toContain("file-app-icon-placeholder");
     expect(styles).toContain(".file-icon-asset");
     expect(styles).toContain(".file-icon-image");
+    expect(styles).toContain(".file-app-icon-placeholder");
   });
 
   it("follows the host theme while preserving the earlier light surface", () => {
     const styles = readSource("src/styles.css");
     const source = readSource("src/main.tsx");
 
-    expect(source).toContain("appkits.Theme.current()");
-    expect(source).toContain("appkits.Theme.onChange(applyTheme)");
+    expect(source).toContain("appkits.theme.current()");
+    expect(source).toContain("appkits.theme.onChange(applyTheme)");
     expect(source).toContain("document.documentElement.dataset.appkitsTheme");
     expect(styles).toContain(':root[data-appkits-theme="dark"]');
     expect(styles).toContain("background: var(--app-surface);");

@@ -1,3 +1,8 @@
 node_modules/
 dist/
 .DS_Store
+
+# Local agent and analysis state
+.worktrees/
+.codegraph/
+.codex/container-state/

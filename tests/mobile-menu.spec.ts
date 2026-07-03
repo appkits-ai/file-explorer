@@ -41,14 +41,38 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).not.toContain("setStatus(`Opened ${entry.name}`)");
   });
 
-  it("requests host menus from statusbar, list background, and rows", () => {
+  it("requests host menus from statusbar, list background, rows, tree, and details pane", () => {
     const source = readSource("src/main.tsx");
 
     expect(source).toContain("function beginLongPress(");
     expect(source).toContain('className="statusbar"');
+    expect(source).toContain('className="tree"');
+    expect(source).toContain('className="details"');
     expect(source).toContain('type: selectedCount > 0 ? "selection" : "background"');
     expect(source).toContain('closest("[data-explorer-entry=\'true\']")');
     expect(source).toContain('type: selectedEntriesForMenu.length > 1 ? "selection" : "entry"');
+    expect(source).toContain("openTreeContextMenu(event,");
+    expect(source).toContain("function openDetailsContextMenu(");
+    expect(source).toContain("openDetailsContextMenu(event)");
+    expect(source).toContain("onContextMenu={(event) => openDetailsContextMenu(event)}");
+  });
+
+  it("routes uploads through a target-aware file picker request", () => {
+    const source = readSource("src/main.tsx");
+    const requestUploadStart = source.indexOf("function requestUpload(");
+    const requestUploadEnd = source.indexOf("function prepareUpload(", requestUploadStart);
+    const requestUploadSource = source.slice(requestUploadStart, requestUploadEnd);
+
+    expect(requestUploadStart).toBeGreaterThan(-1);
+    expect(requestUploadSource).toContain("uploadTargetDirectoryRef.current = normalizePath(targetDirectory)");
+    expect(requestUploadSource).toContain('input.value = ""');
+    expect(requestUploadSource).toContain("input.click()");
+    expect(source).toContain("uploadTargetDirectoryRef.current");
+    expect(source).toContain("prepareUpload(files, uploadTargetDirectoryRef.current)");
+    expect(source).toContain("requestUpload(menu.targetDirectory)");
+    expect(source).toContain("onClick={() => requestUpload(currentPath)}");
+    expect(source).toContain('className="file-picker"');
+    expect(source).not.toContain("\n        hidden\n");
   });
 
   it("keeps mobile controls touch-sized and menus scrollable", () => {

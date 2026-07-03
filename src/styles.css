@@ -137,6 +137,16 @@ input {
   font: inherit;
 }
 
+.file-picker {
+  position: fixed;
+  top: 0;
+  left: -1px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 button {
   color: inherit;
   cursor: pointer;

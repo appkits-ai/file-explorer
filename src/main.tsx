@@ -246,6 +246,7 @@ function App() {
   const listRef = React.useRef<HTMLDivElement | null>(null);
   const rowRefs = React.useRef(new Map<string, HTMLButtonElement>());
   const uploadRef = React.useRef<HTMLInputElement | null>(null);
+  const uploadTargetDirectoryRef = React.useRef(currentPath);
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
   const pathInputRef = React.useRef<HTMLInputElement | null>(null);
   const selectionStartRef = React.useRef<SelectionState | null>(null);
@@ -618,7 +619,7 @@ function App() {
             newMenu(),
             separator("background-action-separator"),
             item("upload", t(locale, "action.uploadFiles"), "upload", () =>
-              uploadRef.current?.click(),
+              requestUpload(menu.targetDirectory),
             ),
             item(
               "refresh",
@@ -885,6 +886,49 @@ function App() {
       });
   }
 
+  function openFilesPaneContextMenu(event: React.MouseEvent<HTMLElement>) {
+    if ((event.target as HTMLElement | null)?.closest("[data-explorer-entry='true']")) return;
+    event.preventDefault();
+    void openContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      type: selectedCount > 1 ? "selection" : "background",
+      targetDirectory: pasteTarget,
+    });
+  }
+
+  function openTreeContextMenu(event: React.MouseEvent<HTMLElement>, targetDirectory = currentPath) {
+    event.preventDefault();
+    event.stopPropagation();
+    void openContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      type: "background",
+      targetDirectory,
+    });
+  }
+
+  function openDetailsContextMenu(event: React.MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    if (detailsEntry) {
+      void openContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        type: "entry",
+        targetDirectory:
+          detailsEntry.kind === "directory" ? detailsEntry.path : parentPath(detailsEntry.path),
+        entry: detailsEntry,
+      });
+      return;
+    }
+    void openContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      type: selectedCount > 0 ? "selection" : "background",
+      targetDirectory: pasteTarget,
+    });
+  }
+
   function handleRowClick(event: React.MouseEvent, entry: ExplorerEntry) {
     if (event.metaKey || event.ctrlKey) {
       setSelectedPaths((current) => {
@@ -1108,6 +1152,14 @@ function App() {
     );
   }
 
+  function requestUpload(targetDirectory = currentPathRef.current) {
+    const input = uploadRef.current;
+    uploadTargetDirectoryRef.current = normalizePath(targetDirectory);
+    if (!input) return;
+    input.value = "";
+    input.click();
+  }
+
   function prepareUpload(files: File[], targetDirectory = currentPathRef.current) {
     if (files.length === 0) return;
     const conflicts = uploadTargets(
@@ -1287,11 +1339,12 @@ function App() {
         ref={uploadRef}
         type="file"
         multiple
-        hidden
+        className="file-picker"
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files || []);
           event.currentTarget.value = "";
-          prepareUpload(files, currentPath);
+          prepareUpload(files, uploadTargetDirectoryRef.current);
+          uploadTargetDirectoryRef.current = currentPathRef.current;
         }}
       />
       <header className="toolbar">
@@ -1307,7 +1360,7 @@ function App() {
         <ToolbarButton label={t(locale, "toolbar.newTextFile")} onClick={() => void createFile(".txt")}>
           <FilePlus2 size={17} />
         </ToolbarButton>
-        <ToolbarButton label={t(locale, "toolbar.upload")} onClick={() => uploadRef.current?.click()}>
+        <ToolbarButton label={t(locale, "toolbar.upload")} onClick={() => requestUpload(currentPath)}>
           <Upload size={17} />
         </ToolbarButton>
         <ToolbarButton label={t(locale, "toolbar.copy")} onClick={() => copyEntries("copy")} disabled={selectedCount === 0}>
@@ -1367,12 +1420,12 @@ function App() {
       </nav>
 
       <section className="workspace">
-        <aside className="tree">
+        <aside className="tree" onContextMenu={(event) => openTreeContextMenu(event, currentPath)}>
           <div className="pane-title">{t(locale, "pane.locations")}</div>
-          <Tree node={tree} currentPath={currentPath} locale={locale} onOpen={navigate} />
+          <Tree node={tree} currentPath={currentPath} locale={locale} onOpen={navigate} openTreeContextMenu={openTreeContextMenu} />
         </aside>
 
-        <section className="files-pane" data-view={viewMode}>
+        <section className="files-pane" data-view={viewMode} onContextMenu={openFilesPaneContextMenu}>
           {viewMode === "details" ? (
             <div className="file-header">
               <span>{t(locale, "header.name")}</span>
@@ -1398,14 +1451,8 @@ function App() {
             onPointerCancel={clearLongPress}
             onPointerUp={clearLongPress}
             onContextMenu={(event) => {
-              if ((event.target as HTMLElement | null)?.closest("[data-explorer-entry='true']")) return;
-              event.preventDefault();
-              void openContextMenu({
-                x: event.clientX,
-                y: event.clientY,
-                type: selectedCount > 1 ? "selection" : "background",
-                targetDirectory: pasteTarget,
-              });
+              event.stopPropagation();
+              openFilesPaneContextMenu(event);
             }}
           >
             {visibleEntriesWithPending.map((entry) => {
@@ -1526,7 +1573,7 @@ function App() {
           </div>
         </section>
 
-        <aside className="details">
+        <aside className="details" onContextMenu={(event) => openDetailsContextMenu(event)}>
           <div className="pane-title">{t(locale, "pane.details")}</div>
           {detailsEntry ? (
             <div className="details-content">
@@ -1635,22 +1682,35 @@ function Tree({
   currentPath,
   locale,
   onOpen,
+  openTreeContextMenu,
 }: {
   node: TreeNode;
   currentPath: string;
   locale: string;
   onOpen: (path: string) => void;
+  openTreeContextMenu: (event: React.MouseEvent<HTMLElement>, targetDirectory: string) => void;
 }) {
   return (
     <div className="tree-node">
-      <button data-active={node.path === currentPath} onClick={() => onOpen(node.path)}>
+      <button
+        data-active={node.path === currentPath}
+        onClick={() => onOpen(node.path)}
+        onContextMenu={(event) => openTreeContextMenu(event, node.path)}
+      >
         {node.path === HOME_ROOT ? <FolderOpen size={16} /> : <Folder size={16} />}
         <span>{node.path === HOME_ROOT ? t(locale, "path.home") : node.name}</span>
       </button>
       {node.children.length > 0 ? (
         <div className="tree-children">
           {node.children.map((child) => (
-            <Tree key={child.path} node={child} currentPath={currentPath} locale={locale} onOpen={onOpen} />
+            <Tree
+              key={child.path}
+              node={child}
+              currentPath={currentPath}
+              locale={locale}
+              onOpen={onOpen}
+              openTreeContextMenu={openTreeContextMenu}
+            />
           ))}
         </div>
       ) : null}

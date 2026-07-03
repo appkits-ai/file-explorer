@@ -370,7 +370,7 @@ export function desktopFileIconName(entry: ExplorerEntry): DesktopFileIconName {
 }
 
 export function isTextPreviewable(entry: ExplorerEntry): boolean {
-  return ["code", "html", "json", "markdown", "text"].includes(fileTypeKind(entry));
+  return ["code", "html", "markdown"].includes(fileTypeKind(entry));
 }
 
 export function formatSize(value: number | undefined): string {

@@ -7,6 +7,7 @@ import {
   createTargetPath,
   desktopFileIconName,
   fileTypeLabel,
+  isTextPreviewable,
   mergeDirectoryListing,
   pendingCreateEntry,
   pendingCreatePath,
@@ -180,5 +181,11 @@ describe("file explorer model", () => {
     expect(desktopFileIconName({ path: "/home/agent/editor.app", name: "editor.app", kind: "file" })).toBe(
       "file-executable",
     );
+  });
+
+  it("does not directly preview text, json, or app launcher contents", () => {
+    expect(isTextPreviewable({ path: "/home/agent/notes.txt", name: "notes.txt", kind: "file" })).toBe(false);
+    expect(isTextPreviewable({ path: "/home/agent/config.json", name: "config.json", kind: "file" })).toBe(false);
+    expect(isTextPreviewable({ path: "/home/agent/Desktop/editor.app", name: "editor.app", kind: "file" })).toBe(false);
   });
 });

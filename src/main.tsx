@@ -28,7 +28,6 @@ import {
   buildDirectoryTree,
   childEntries,
   contextMenuItemIdFromSelection,
-  createTargetPath,
   desktopFileIconName,
   fileTypeKind,
   filenameFromPath,
@@ -41,6 +40,8 @@ import {
   parentPath,
   pendingCreateEntry,
   pendingCreatePath,
+  pendingCreateTarget,
+  planMoveTargets,
   pathFromLaunchParams,
   pathFromVisiblePath,
   rectsIntersect,
@@ -128,6 +129,7 @@ type TextFileExtension = ".txt" | ".md" | ".html";
 interface PendingCreate {
   kind: PendingCreateKind;
   directory: string;
+  initialName: string;
   extension?: TextFileExtension;
 }
 
@@ -1002,10 +1004,16 @@ function App() {
         : `${t(locale, "new.untitled")}${extension}`;
     const path = uniquePath(entriesRef.current, directory, defaultName);
     const pendingPath = pendingCreatePath(directory, kind);
+    const initialName = filenameFromPath(path);
     void appkits.contextMenu.close().catch(() => undefined);
-    setPendingCreate({ kind, directory, extension: kind === "file" ? extension : undefined });
+    setPendingCreate({
+      kind,
+      directory,
+      initialName,
+      extension: kind === "file" ? extension : undefined,
+    });
     setRenamingPath(pendingPath);
-    setRenameValue(filenameFromPath(path));
+    setRenameValue(initialName);
     setSingleSelection(pendingPath);
     setStatus(kind === "directory" ? t(locale, "status.creatingFolder") : t(locale, "status.creatingFile"));
   }
@@ -1029,27 +1037,29 @@ function App() {
       setSingleSelection(null);
       try {
         if (!commit) return;
-        const target = createTargetPath(pending.directory, renameValue);
-        if (!target) return;
-        const exists = entriesRef.current.some(
-          (entry) => entry.path.toLowerCase() === target.toLowerCase(),
+        const target = pendingCreateTarget(
+          entriesRef.current,
+          pending.directory,
+          pending.initialName,
+          renameValue,
         );
-        if (exists) {
+        if (!target) return;
+        if (target.exists) {
           notify(t(locale, "notify.nameExists"), "error");
           return;
         }
         if (pending.kind === "directory") {
-          await appkits.files.mkdir(target);
+          await appkits.files.mkdir(target.path);
         } else {
           const extension = pending.extension || ".txt";
           await appkits.files.write({
-            path: target,
+            path: target.path,
             body: TEXT_FILE_BODY[extension],
             contentType: TEXT_FILE_TYPE[extension],
           });
         }
         await refresh();
-        setSingleSelection(target);
+        setSingleSelection(target.path);
         setStatus(pending.kind === "directory" ? t(locale, "status.folderCreated") : t(locale, "status.fileCreated"));
       } finally {
         pendingCreateCommitRef.current = false;
@@ -1122,6 +1132,75 @@ function App() {
     if (clipboard.mode === "cut") setClipboard(null);
     await refresh();
     setStatus(t(locale, "status.pasteComplete"));
+  }
+
+  function fileTransferEntries(items: ExplorerEntry[]): appkits.AppKitsFileTransferEntry[] {
+    return items.map((entry) => ({
+      path: entry.path,
+      name: entry.name,
+      kind: entry.kind,
+      ...(entry.contentType ? { contentType: entry.contentType } : {}),
+      local: entry.local === true,
+    }));
+  }
+
+  function draggedFileTransferPaths(dataTransfer: DataTransfer): string[] {
+    const shared = appkits.parseAppKitsFileTransferEntries(
+      dataTransfer.getData(appkits.APPKITS_FILE_TRANSFER_MIME),
+    );
+    if (shared.length > 0) return shared.map((entry) => entry.path);
+    try {
+      const legacy = JSON.parse(
+        dataTransfer.getData(appkits.APPKITS_FILE_TRANSFER_LEGACY_MIME),
+      ) as unknown;
+      if (!Array.isArray(legacy)) return [];
+      return legacy.filter(
+        (path): path is string =>
+          typeof path === "string" && path.trim().length > 0,
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  function hasInternalFileTransfer(types: readonly string[]): boolean {
+    return (
+      types.includes(appkits.APPKITS_FILE_TRANSFER_MIME) ||
+      types.includes(appkits.APPKITS_FILE_TRANSFER_LEGACY_MIME)
+    );
+  }
+
+  async function moveDroppedEntries(
+    event: React.DragEvent,
+    targetDirectory: string,
+  ): Promise<boolean> {
+    const paths = draggedFileTransferPaths(event.dataTransfer);
+    if (paths.length === 0) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    const targets = planMoveTargets(
+      entriesRef.current,
+      paths,
+      targetDirectory,
+    );
+    if (targets.length === 0) return true;
+    try {
+      for (const target of targets) {
+        await appkits.files.move(target.fromPath, target.toPath);
+      }
+      const refreshTargets = new Set([
+        currentPathRef.current,
+        normalizePath(targetDirectory),
+        ...targets.map((target) => parentPath(target.fromPath)),
+      ]);
+      await Promise.all([...refreshTargets].map((path) => refresh(path)));
+      setSingleSelection(targets[targets.length - 1]?.toPath || null);
+      setStatus(t(locale, "status.pasteComplete"));
+    } catch {
+      notify(t(locale, "notify.refreshFailed"), "error");
+      setStatus(t(locale, "status.refreshFailed", { path: displayPath(locale, targetDirectory) }));
+    }
+    return true;
   }
 
   async function copyDirectory(fromPath: string, toPath: string) {
@@ -1343,29 +1422,45 @@ function App() {
       tabIndex={0}
       onPointerDown={() => rootRef.current?.focus()}
       onDragEnter={(event) => {
-        if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
+        const types = Array.from(event.dataTransfer.types || []);
+        if (hasInternalFileTransfer(types)) {
+          event.preventDefault();
+          return;
+        }
+        if (!types.includes("Files")) return;
         event.preventDefault();
         dragDepthRef.current += 1;
         setDraggingFiles(true);
       }}
       onDragOver={(event) => {
-        if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
+        const types = Array.from(event.dataTransfer.types || []);
+        if (hasInternalFileTransfer(types)) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          return;
+        }
+        if (!types.includes("Files")) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         setDraggingFiles(true);
       }}
       onDragLeave={(event) => {
-        if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
+        const types = Array.from(event.dataTransfer.types || []);
+        if (hasInternalFileTransfer(types)) return;
+        if (!types.includes("Files")) return;
         event.preventDefault();
         dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
         if (dragDepthRef.current === 0) setDraggingFiles(false);
       }}
       onDrop={(event) => {
-        if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
-        event.preventDefault();
-        dragDepthRef.current = 0;
-        setDraggingFiles(false);
-        prepareUpload(Array.from(event.dataTransfer.files || []), currentPath);
+        void (async () => {
+          if (await moveDroppedEntries(event, currentPath)) return;
+          if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
+          event.preventDefault();
+          dragDepthRef.current = 0;
+          setDraggingFiles(false);
+          prepareUpload(Array.from(event.dataTransfer.files || []), currentPath);
+        })();
       }}
     >
       <input
@@ -1455,7 +1550,14 @@ function App() {
       <section className="workspace">
         <aside className="tree" onContextMenu={(event) => openTreeContextMenu(event, currentPath)}>
           <div className="pane-title">{t(locale, "pane.locations")}</div>
-          <Tree node={tree} currentPath={currentPath} locale={locale} onOpen={navigate} openTreeContextMenu={openTreeContextMenu} />
+          <Tree
+            node={tree}
+            currentPath={currentPath}
+            locale={locale}
+            onOpen={navigate}
+            openTreeContextMenu={openTreeContextMenu}
+            moveDroppedEntries={moveDroppedEntries}
+          />
         </aside>
 
         <section className="files-pane" data-view={viewMode} onContextMenu={openFilesPaneContextMenu}>
@@ -1547,21 +1649,27 @@ function App() {
                     }
                     const dragEntries = selected ? selectedEntries : [entry];
                     event.dataTransfer.effectAllowed = "copyMove";
-                    event.dataTransfer.setData("application/x-appkits-file-entry", JSON.stringify(dragEntries.map((item) => item.path)));
-                    event.dataTransfer.setData("text/plain", dragEntries.map((item) => item.name).join("\n"));
+                    appkits.writeAppKitsFileTransferData(
+                      event.dataTransfer,
+                      fileTransferEntries(dragEntries),
+                    );
                   }}
                   onDragOver={(event) => {
                     if (entry.kind !== "directory") return;
-                    if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
+                    const types = Array.from(event.dataTransfer.types || []);
+                    if (!hasInternalFileTransfer(types) && !types.includes("Files")) return;
                     event.preventDefault();
-                    event.dataTransfer.dropEffect = "copy";
+                    event.dataTransfer.dropEffect = hasInternalFileTransfer(types) ? "move" : "copy";
                   }}
                   onDrop={(event) => {
                     if (entry.kind !== "directory") return;
-                    const files = Array.from(event.dataTransfer.files || []);
-                    if (files.length === 0) return;
-                    event.preventDefault();
-                    prepareUpload(files, entry.path);
+                    void (async () => {
+                      if (await moveDroppedEntries(event, entry.path)) return;
+                      const files = Array.from(event.dataTransfer.files || []);
+                      if (files.length === 0) return;
+                      event.preventDefault();
+                      prepareUpload(files, entry.path);
+                    })();
                   }}
                 >
                   <span className="file-main">
@@ -1573,7 +1681,7 @@ function App() {
                         onChange={(event) => setRenameValue(event.target.value)}
                         onClick={(event) => event.stopPropagation()}
                         onPointerDown={(event) => event.stopPropagation()}
-                        onBlur={() => void finishRename(!pendingCreate)}
+                        onBlur={() => void finishRename(true)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") void finishRename(true);
                           if (event.key === "Escape") void finishRename(false);
@@ -1716,12 +1824,17 @@ function Tree({
   locale,
   onOpen,
   openTreeContextMenu,
+  moveDroppedEntries,
 }: {
   node: TreeNode;
   currentPath: string;
   locale: string;
   onOpen: (path: string) => void;
   openTreeContextMenu: (event: React.MouseEvent<HTMLElement>, targetDirectory: string) => void;
+  moveDroppedEntries: (
+    event: React.DragEvent,
+    targetDirectory: string,
+  ) => Promise<boolean>;
 }) {
   return (
     <div className="tree-node">
@@ -1729,6 +1842,20 @@ function Tree({
         data-active={node.path === currentPath}
         onClick={() => onOpen(node.path)}
         onContextMenu={(event) => openTreeContextMenu(event, node.path)}
+        onDragOver={(event) => {
+          const types = Array.from(event.dataTransfer.types || []);
+          if (
+            !types.includes(appkits.APPKITS_FILE_TRANSFER_MIME) &&
+            !types.includes(appkits.APPKITS_FILE_TRANSFER_LEGACY_MIME)
+          ) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          void moveDroppedEntries(event, node.path);
+        }}
       >
         {node.path === HOME_ROOT ? <FolderOpen size={16} /> : <Folder size={16} />}
         <span>{node.path === HOME_ROOT ? t(locale, "path.home") : node.name}</span>
@@ -1743,6 +1870,7 @@ function Tree({
               locale={locale}
               onOpen={onOpen}
               openTreeContextMenu={openTreeContextMenu}
+              moveDroppedEntries={moveDroppedEntries}
             />
           ))}
         </div>

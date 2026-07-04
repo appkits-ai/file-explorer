@@ -12,8 +12,10 @@ import {
   mergeDirectoryListing,
   pendingCreateEntry,
   pendingCreatePath,
+  pendingCreateTarget,
   pathFromLaunchParams,
   pathFromVisiblePath,
+  planMoveTargets,
   sanitizeFilename,
   searchEntries,
   selectedPathFromLaunchParams,
@@ -113,6 +115,74 @@ describe("file explorer model", () => {
     );
     expect(createTargetPath(HOME_ROOT, "")).toBeNull();
     expect(createTargetPath(HOME_ROOT, "nested/file.txt")).toBeNull();
+  });
+
+  it("recomputes the pending create default name but preserves manual conflicts", () => {
+    const createEntries: ExplorerEntry[] = [
+      { path: "/home/agent/Untitled.txt", name: "Untitled.txt", kind: "file" },
+      {
+        path: "/home/agent/Untitled 2.txt",
+        name: "Untitled 2.txt",
+        kind: "file",
+      },
+      { path: "/home/agent/readme.md", name: "readme.md", kind: "file" },
+    ];
+
+    expect(
+      pendingCreateTarget(createEntries, HOME_ROOT, "Untitled.txt", "Untitled.txt"),
+    ).toEqual({
+      path: "/home/agent/Untitled 3.txt",
+      name: "Untitled 3.txt",
+      exists: false,
+    });
+    expect(
+      pendingCreateTarget(createEntries, HOME_ROOT, "Untitled.txt", "readme.md"),
+    ).toEqual({
+      path: "/home/agent/readme.md",
+      name: "readme.md",
+      exists: true,
+    });
+    expect(
+      pendingCreateTarget(createEntries, HOME_ROOT, "Untitled.txt", "nested/file.txt"),
+    ).toBeNull();
+  });
+
+  it("plans move drops with copy-safe target names and descendant protection", () => {
+    const moveEntries: ExplorerEntry[] = [
+      { path: "/home/agent/report.md", name: "report.md", kind: "file" },
+      { path: "/home/agent/assets", name: "assets", kind: "directory" },
+      {
+        path: "/home/agent/assets/icon.png",
+        name: "icon.png",
+        kind: "file",
+      },
+      { path: "/home/agent/Desktop", name: "Desktop", kind: "directory" },
+      {
+        path: "/home/agent/Desktop/report.md",
+        name: "report.md",
+        kind: "file",
+      },
+    ];
+
+    expect(
+      planMoveTargets(
+        moveEntries,
+        ["/home/agent/report.md", "/home/agent/assets"],
+        "/home/agent/Desktop",
+      ),
+    ).toEqual([
+      {
+        fromPath: "/home/agent/report.md",
+        toPath: "/home/agent/Desktop/report copy.md",
+      },
+      {
+        fromPath: "/home/agent/assets",
+        toPath: "/home/agent/Desktop/assets",
+      },
+    ]);
+    expect(
+      planMoveTargets(moveEntries, ["/home/agent/assets"], "/home/agent/assets/icon.png"),
+    ).toEqual([]);
   });
 
   it("selects a launched file while opening its containing folder", () => {

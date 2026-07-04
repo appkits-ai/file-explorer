@@ -23,6 +23,17 @@ export interface UploadTarget {
   conflict: boolean;
 }
 
+export interface PendingCreateTarget {
+  path: string;
+  name: string;
+  exists: boolean;
+}
+
+export interface MoveTarget {
+  fromPath: string;
+  toPath: string;
+}
+
 export type PendingCreateKind = "file" | "directory";
 
 export type FileTypeKind =
@@ -285,6 +296,80 @@ export function createTargetPath(
   if (!trimmed || trimmed.includes("/") || trimmed.includes("\\")) return null;
   if (trimmed === "." || trimmed === "..") return null;
   return joinPath(directory, trimmed);
+}
+
+export function pendingCreateTarget(
+  entries: ExplorerEntry[],
+  directory: string,
+  initialName: string,
+  renameValue: string,
+): PendingCreateTarget | null {
+  const trimmedName = renameValue.trim();
+  const targetName =
+    trimmedName === initialName
+      ? filenameFromPath(uniquePath(entries, directory, initialName))
+      : trimmedName;
+  const path = createTargetPath(directory, targetName);
+  if (!path) return null;
+  const exists = entries.some(
+    (entry) => entry.path.toLowerCase() === path.toLowerCase(),
+  );
+  return { path, name: filenameFromPath(path), exists };
+}
+
+function copySafePath(
+  entries: ExplorerEntry[],
+  directory: string,
+  filename: string,
+  isDirectory: boolean,
+): string {
+  const normalizedDirectory = normalizePath(directory);
+  const extension =
+    !isDirectory && filename.includes(".")
+      ? filename.slice(filename.lastIndexOf("."))
+      : "";
+  const stem = extension ? filename.slice(0, -extension.length) : filename;
+  const existing = new Set(entries.map((entry) => entry.path.toLowerCase()));
+  let attempt = 0;
+  for (;;) {
+    const suffix =
+      attempt === 0 ? "" : ` copy${attempt === 1 ? "" : ` ${attempt}`}`;
+    const candidate = `${normalizedDirectory}/${stem}${suffix}${extension}`;
+    if (!existing.has(candidate.toLowerCase())) return candidate;
+    attempt += 1;
+  }
+}
+
+export function planMoveTargets(
+  entries: ExplorerEntry[],
+  sourcePaths: string[],
+  targetDirectory: string,
+): MoveTarget[] {
+  const entryByPath = new Map(entries.map((entry) => [entry.path, entry]));
+  const normalizedTarget = normalizePath(targetDirectory);
+  const allocated: ExplorerEntry[] = [];
+  const planned: MoveTarget[] = [];
+  for (const sourcePath of [...new Set(sourcePaths)]) {
+    const source = normalizePath(sourcePath);
+    const entry = entryByPath.get(source);
+    if (!entry) continue;
+    if (normalizedTarget === source || normalizedTarget.startsWith(`${source}/`))
+      continue;
+    if (parentPath(source) === normalizedTarget) continue;
+    const toPath = copySafePath(
+      [...entries, ...allocated],
+      normalizedTarget,
+      entry.name,
+      entry.kind === "directory",
+    );
+    allocated.push({
+      path: toPath,
+      name: filenameFromPath(toPath),
+      kind: entry.kind,
+    });
+    planned.push({ fromPath: source, toPath });
+  }
+  return planned;
 }
 
 export function uploadTargets(

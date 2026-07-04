@@ -27,6 +27,7 @@ import {
   breadcrumbSegments,
   buildDirectoryTree,
   childEntries,
+  contextMenuItemIdFromSelection,
   createTargetPath,
   desktopFileIconName,
   fileTypeKind,
@@ -415,7 +416,9 @@ function App() {
 
   React.useEffect(() => {
     return appkits.contextMenu.onSelect((event) => {
-      const action = contextMenuActionsRef.current.get(event.itemId);
+      const itemId = contextMenuItemIdFromSelection(event);
+      if (!itemId) return;
+      const action = contextMenuActionsRef.current.get(itemId);
       contextMenuActionsRef.current.clear();
       action?.();
     });

@@ -3,15 +3,28 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const CORE_REF = "c620f02597980c48cebcb0c46e75adcfc29c1ad9";
+const CORE_REF = "0a28e5e0fda8169bf5df877ad2db365260d0d263";
 const sdkInstallRoot = path.resolve("node_modules/@appkits-ai/sdk");
 const uiInstallRoot = path.resolve("node_modules/@appkits-ai/ui");
 const sdkClientTypes = path.join(sdkInstallRoot, "dist/client/index.d.ts");
+const sdkClientRuntime = path.join(sdkInstallRoot, "dist/client/index.js");
 const sdkDesktopIconTypes = path.join(sdkInstallRoot, "dist/desktop-icons.d.ts");
 const sdkPackageJson = path.join(sdkInstallRoot, "package.json");
 const sdkClientProtocol = path.join(sdkInstallRoot, "dist/client/protocol.js");
 const uiComponentTypes = path.join(uiInstallRoot, "dist/components/button.d.ts");
 const uiPackageJson = path.join(uiInstallRoot, "package.json");
+const requiredSdkClientTypeMarkers = [
+  "open(input: AppKitsFileOpenInput)",
+  "openers(input: AppKitsFileOpenTarget)",
+  "AppKitsFilesChangedEvent",
+  "onChanged(handler: (event: AppKitsFilesChangedEvent) => void)",
+  "AppKitsContextMenuSelectEvent",
+  "onSelect(handler: (event: AppKitsContextMenuSelectEvent) => void)",
+];
+const requiredSdkClientRuntimeMarkers = [
+  'on("files.changed"',
+  "handler({ itemId: data.itemId })",
+];
 
 if (installedSdkIsCurrent() && installedUiIsCurrent()) {
   process.exit(0);
@@ -22,6 +35,9 @@ const { sdkRoot: sourceSdkRoot, uiRoot: sourceUiRoot } = resolvePackageSources()
 const builtClientTypes = path.join(sourceSdkRoot, "dist/client/index.d.ts");
 if (!fs.existsSync(builtClientTypes)) {
   throw new Error(`appkits_sdk_client_missing:${sourceSdkRoot}`);
+}
+if (!sdkBuildSupportsRequiredDesktopBridge(sourceSdkRoot)) {
+  throw new Error(`appkits_sdk_source_stale:${sourceSdkRoot}`);
 }
 const builtUiTypes = path.join(sourceUiRoot, "dist/components/button.d.ts");
 if (!fs.existsSync(builtUiTypes)) {
@@ -43,6 +59,7 @@ if (!installedSdkIsCurrent() || !installedUiIsCurrent()) {
 function installedSdkIsCurrent() {
   if (
     !fs.existsSync(sdkClientTypes) ||
+    !fs.existsSync(sdkClientRuntime) ||
     !fs.existsSync(sdkDesktopIconTypes) ||
     !fs.existsSync(sdkPackageJson)
   ) {
@@ -58,13 +75,29 @@ function installedSdkIsCurrent() {
   }
 
   if (!fs.existsSync(sdkClientProtocol)) return false;
-  const clientTypes = fs.readFileSync(sdkClientTypes, "utf8");
   const protocol = fs.readFileSync(sdkClientProtocol, "utf8");
   return (
     protocol.includes("APPKITS_DESKTOP_REQUEST") &&
     !protocol.includes("W3KITS_DESKTOP_REQUEST") &&
-    clientTypes.includes("open(input: AppKitsFileOpenInput)") &&
-    clientTypes.includes("openers(input: AppKitsFileOpenTarget)")
+    sdkBuildSupportsRequiredDesktopBridge(sdkInstallRoot)
+  );
+}
+
+function sdkBuildSupportsRequiredDesktopBridge(packageRoot) {
+  const clientTypesPath = path.join(packageRoot, "dist/client/index.d.ts");
+  const clientRuntimePath = path.join(packageRoot, "dist/client/index.js");
+  if (!fs.existsSync(clientTypesPath) || !fs.existsSync(clientRuntimePath)) {
+    return false;
+  }
+
+  const clientTypes = fs.readFileSync(clientTypesPath, "utf8");
+  const clientRuntime = fs.readFileSync(clientRuntimePath, "utf8");
+  return (
+    requiredSdkClientTypeMarkers.every((marker) => clientTypes.includes(marker)) &&
+    requiredSdkClientRuntimeMarkers.every((marker) =>
+      clientRuntime.includes(marker),
+    ) &&
+    !clientRuntime.includes("handler(data.itemId)")
   );
 }
 

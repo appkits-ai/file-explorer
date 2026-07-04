@@ -102,6 +102,15 @@ export function shouldRefreshDirectoryForFilesChanged(
   });
 }
 
+export function contextMenuItemIdFromSelection(selection: unknown): string | null {
+  if (typeof selection === "string") return selection;
+  if (!selection || typeof selection !== "object" || Array.isArray(selection)) {
+    return null;
+  }
+  const itemId = (selection as Record<string, unknown>).itemId;
+  return typeof itemId === "string" ? itemId : null;
+}
+
 export function joinPath(directory: string, filename: string): string {
   return normalizePath(`${normalizePath(directory)}/${filename}`);
 }

@@ -17,4 +17,15 @@ describe("AppKits SDK install guard", () => {
     expect(script).toContain("dist/components/button.d.ts");
     expect(script).toContain("appkits_sdk_invalid");
   });
+
+  it("rejects SDK installs that lack file-change events and object context-menu selections", () => {
+    const script = readSource("scripts/install-appkits-sdk.mjs");
+
+    expect(script).toContain("AppKitsFilesChangedEvent");
+    expect(script).toContain("files.changed");
+    expect(script).toContain("AppKitsContextMenuSelectEvent");
+    expect(script).toContain("handler({ itemId: data.itemId })");
+    expect(script).toContain('!clientRuntime.includes("handler(data.itemId)")');
+    expect(script).toContain("appkits_sdk_source_stale");
+  });
 });

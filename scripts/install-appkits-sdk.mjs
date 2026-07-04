@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const CORE_REF = "57ac89a8169ad6e3185043b45016d0809c7249de";
+const CORE_REF = "0a28e5e0fda8169bf5df877ad2db365260d0d263";
 const sdkInstallRoot = path.resolve("node_modules/@appkits-ai/sdk");
 const uiInstallRoot = path.resolve("node_modules/@appkits-ai/ui");
 const sdkClientTypes = path.join(sdkInstallRoot, "dist/client/index.d.ts");

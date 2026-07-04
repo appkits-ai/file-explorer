@@ -41,6 +41,30 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).not.toContain("setStatus(`Opened ${entry.name}`)");
   });
 
+  it("opens context menus without waiting for opener discovery", () => {
+    const source = readSource("src/main.tsx");
+    const openContextMenuStart = source.indexOf("function openContextMenu(");
+    const openContextMenuEnd = source.indexOf("function clearLongPress(", openContextMenuStart);
+    const openContextMenuSource = source.slice(
+      openContextMenuStart,
+      openContextMenuEnd,
+    );
+
+    expect(openContextMenuStart).toBeGreaterThan(-1);
+    expect(openContextMenuSource).toContain("cachedOpenersForEntry");
+    expect(openContextMenuSource).toContain("prefetchOpenersForEntry");
+    expect(openContextMenuSource).not.toContain("await openersForEntry");
+  });
+
+  it("coalesces same-directory refresh requests", () => {
+    const source = readSource("src/main.tsx");
+
+    expect(source).toContain("refreshPromisesRef");
+    expect(source).toContain("const pendingRefresh = refreshPromisesRef.current.get(targetDirectory)");
+    expect(source).toContain("if (pendingRefresh) return pendingRefresh");
+    expect(source).toContain("refreshPromisesRef.current.delete(targetDirectory)");
+  });
+
   it("requests host menus from statusbar, list background, rows, tree, and details pane", () => {
     const source = readSource("src/main.tsx");
 

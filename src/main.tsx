@@ -263,6 +263,13 @@ function App() {
   const pendingCreateCommitRef = React.useRef(false);
   const contextMenuActionsRef = React.useRef(new Map<string, () => void>());
   const filesChangedRefreshTimeoutRef = React.useRef<number | null>(null);
+  const refreshPromisesRef = React.useRef(new Map<string, Promise<void>>());
+  const openerCacheRef = React.useRef(
+    new Map<string, ShellFileOpenerSummary[]>(),
+  );
+  const openerRequestRef = React.useRef(
+    new Map<string, Promise<ShellFileOpenerSummary[]>>(),
+  );
   const longPressRef = React.useRef<{
     pointerId: number;
     x: number;
@@ -293,74 +300,90 @@ function App() {
     setPathEditorValue(displayPath(locale, currentPath));
   }, [currentPath, locale]);
 
-  const refresh = React.useCallback(async (directory = currentPathRef.current) => {
+  const refresh = React.useCallback((directory = currentPathRef.current) => {
     const targetDirectory = normalizePath(directory);
-    setLoadingDirectories((current) => {
-      const next = new Set(current);
-      next.add(targetDirectory);
-      return next;
-    });
-    setStatus(t(locale, "status.refreshing", { path: displayPath(locale, targetDirectory) }));
-    try {
-      const result = await appkits.files.list(targetDirectory);
-      const listedEntries = result.entries.map((entry) => ({
-        path: normalizePath(entry.path),
-        name: entry.name || filenameFromPath(entry.path),
-        kind: entry.kind,
-        contentType: entry.contentType,
-        size: entry.size,
-        local: entry.local,
-        temporary: entry.temporary,
-        updatedAt:
-          "updatedAt" in entry && typeof entry.updatedAt === "string"
-            ? entry.updatedAt
-            : new Date().toISOString(),
-      }));
-      setEntries((current) => {
-        const nextEntries = mergeDirectoryListing(
-          current,
-          targetDirectory,
-          listedEntries,
-        );
-        const launchSelection = pendingLaunchSelectionRef.current;
-        if (
-          launchSelection &&
-          nextEntries.some((entry) => entry.path === launchSelection)
-        ) {
-          setSelectedPaths([launchSelection]);
-          setActivePath(launchSelection);
-          pendingLaunchSelectionRef.current = null;
-        } else {
-          setSelectedPaths((selection) =>
-            selection.filter((path) =>
-              nextEntries.some((entry) => entry.path === path),
-            ),
-          );
-        }
-        return nextEntries;
-      });
-      setLoadedDirectories((current) => {
+    const pendingRefresh = refreshPromisesRef.current.get(targetDirectory);
+    if (pendingRefresh) return pendingRefresh;
+    const refreshPromise = (async () => {
+      setLoadingDirectories((current) => {
         const next = new Set(current);
         next.add(targetDirectory);
         return next;
       });
       setStatus(
-        t(locale, "status.folderItems", {
-          count: listedEntries.length,
+        t(locale, "status.refreshing", {
           path: displayPath(locale, targetDirectory),
-          plural: pluralSuffix(locale, listedEntries.length),
         }),
       );
-    } catch {
-      notify(t(locale, "notify.refreshFailed"), "error");
-      setStatus(t(locale, "status.refreshFailed", { path: displayPath(locale, targetDirectory) }));
-    } finally {
-      setLoadingDirectories((current) => {
-        const next = new Set(current);
-        next.delete(targetDirectory);
-        return next;
-      });
-    }
+      try {
+        const result = await appkits.files.list(targetDirectory);
+        const listedEntries = result.entries.map((entry) => ({
+          path: normalizePath(entry.path),
+          name: entry.name || filenameFromPath(entry.path),
+          kind: entry.kind,
+          contentType: entry.contentType,
+          size: entry.size,
+          local: entry.local,
+          temporary: entry.temporary,
+          updatedAt:
+            "updatedAt" in entry && typeof entry.updatedAt === "string"
+              ? entry.updatedAt
+              : new Date().toISOString(),
+        }));
+        setEntries((current) => {
+          const nextEntries = mergeDirectoryListing(
+            current,
+            targetDirectory,
+            listedEntries,
+          );
+          const launchSelection = pendingLaunchSelectionRef.current;
+          if (
+            launchSelection &&
+            nextEntries.some((entry) => entry.path === launchSelection)
+          ) {
+            setSelectedPaths([launchSelection]);
+            setActivePath(launchSelection);
+            pendingLaunchSelectionRef.current = null;
+          } else {
+            setSelectedPaths((selection) =>
+              selection.filter((path) =>
+                nextEntries.some((entry) => entry.path === path),
+              ),
+            );
+          }
+          return nextEntries;
+        });
+        setLoadedDirectories((current) => {
+          const next = new Set(current);
+          next.add(targetDirectory);
+          return next;
+        });
+        setStatus(
+          t(locale, "status.folderItems", {
+            count: listedEntries.length,
+            path: displayPath(locale, targetDirectory),
+            plural: pluralSuffix(locale, listedEntries.length),
+          }),
+        );
+      } catch {
+        notify(t(locale, "notify.refreshFailed"), "error");
+        setStatus(
+          t(locale, "status.refreshFailed", {
+            path: displayPath(locale, targetDirectory),
+          }),
+        );
+      } finally {
+        setLoadingDirectories((current) => {
+          const next = new Set(current);
+          next.delete(targetDirectory);
+          return next;
+        });
+      }
+    })().finally(() => {
+      refreshPromisesRef.current.delete(targetDirectory);
+    });
+    refreshPromisesRef.current.set(targetDirectory, refreshPromise);
+    return refreshPromise;
   }, [locale]);
 
   React.useEffect(() => {
@@ -428,6 +451,8 @@ function App() {
 
   React.useEffect(() => {
     return appkits.files.onChanged((event) => {
+      openerCacheRef.current.clear();
+      openerRequestRef.current.clear();
       if (
         !shouldRefreshDirectoryForFilesChanged(
           currentPathRef.current,
@@ -516,7 +541,46 @@ function App() {
     return id;
   }
 
-  async function openContextMenu(menu: ContextMenuState) {
+  function openerCacheKey(entry: ExplorerEntry): string {
+    return [
+      entry.path,
+      entry.contentType || "",
+      entry.local === true ? "local" : "remote",
+    ].join("\n");
+  }
+
+  function cachedOpenersForEntry(
+    entry: ExplorerEntry | undefined,
+  ): ShellFileOpenerSummary[] {
+    if (!entry || entry.kind !== "file") return [];
+    return openerCacheRef.current.get(openerCacheKey(entry)) ?? [];
+  }
+
+  function prefetchOpenersForEntry(entry: ExplorerEntry | undefined): void {
+    if (!entry || entry.kind !== "file") return;
+    const key = openerCacheKey(entry);
+    if (openerCacheRef.current.has(key) || openerRequestRef.current.has(key)) {
+      return;
+    }
+    const request = appkits.files.openers({
+      path: entry.path,
+      name: entry.name,
+      kind: "file",
+      contentType: entry.contentType,
+      local: entry.local,
+    })
+      .then((result) => {
+        openerCacheRef.current.set(key, result.openers);
+        return result.openers;
+      })
+      .catch(() => [])
+      .finally(() => {
+        openerRequestRef.current.delete(key);
+      });
+    openerRequestRef.current.set(key, request);
+  }
+
+  function openContextMenu(menu: ContextMenuState) {
     const actions = new Map<string, () => void>();
     const targetItems = menu.type === "entry" ? [menu.entry] : selectedEntries;
     const hostLabel = (value: string): HostContextMenuLabel => ({
@@ -594,23 +658,6 @@ function App() {
           void createFile(".html"),
         ),
       ]);
-    const openersForEntry = async (
-      entry: ExplorerEntry | undefined,
-    ): Promise<ShellFileOpenerSummary[]> => {
-      if (!entry || entry.kind !== "file") return [];
-      try {
-        const result = await appkits.files.openers({
-          path: entry.path,
-          name: entry.name,
-          kind: "file",
-          contentType: entry.contentType,
-          local: entry.local,
-        });
-        return result.openers;
-      } catch {
-        return [];
-      }
-    };
     const openWithMenu = (
       entry: ExplorerEntry | undefined,
       openers: ShellFileOpenerSummary[],
@@ -631,12 +678,16 @@ function App() {
         ),
       );
     };
+    if (menu.type === "selection" && targetItems.length === 1) {
+      prefetchOpenersForEntry(targetItems[0]);
+    }
+    if (menu.type === "entry") prefetchOpenersForEntry(menu.entry);
     const selectionOpeners =
       menu.type === "selection" && targetItems.length === 1
-        ? await openersForEntry(targetItems[0])
+        ? cachedOpenersForEntry(targetItems[0])
         : [];
     const entryOpeners =
-      menu.type === "entry" ? await openersForEntry(menu.entry) : [];
+      menu.type === "entry" ? cachedOpenersForEntry(menu.entry) : [];
     const menuItems: Array<HostContextMenuItem | null> =
       menu.type === "background"
         ? [

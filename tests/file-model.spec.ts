@@ -4,6 +4,7 @@ import {
   breadcrumbSegments,
   buildDirectoryTree,
   childEntries,
+  contextMenuItemIdFromSelection,
   createTargetPath,
   desktopFileIconName,
   fileTypeLabel,
@@ -161,6 +162,13 @@ describe("file explorer model", () => {
         "/home/agent/Documents/new.txt",
       ]),
     ).toBe(false);
+  });
+
+  it("normalizes context-menu selection payloads across SDK versions", () => {
+    expect(contextMenuItemIdFromSelection({ itemId: "rename" })).toBe("rename");
+    expect(contextMenuItemIdFromSelection("delete")).toBe("delete");
+    expect(contextMenuItemIdFromSelection({ itemId: 42 })).toBeNull();
+    expect(contextMenuItemIdFromSelection(null)).toBeNull();
   });
 
   it("sanitizes unsafe file names for create, upload, and rename", () => {

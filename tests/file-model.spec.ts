@@ -16,6 +16,7 @@ import {
   sanitizeFilename,
   searchEntries,
   selectedPathFromLaunchParams,
+  shouldRefreshDirectoryForFilesChanged,
   uniquePath,
   uploadTargets,
   visiblePath,
@@ -139,6 +140,27 @@ describe("file explorer model", () => {
       "project",
       "src",
     ]);
+  });
+
+  it("decides whether file change events affect the current directory", () => {
+    expect(
+      shouldRefreshDirectoryForFilesChanged("/home/agent/Desktop", undefined),
+    ).toBe(true);
+    expect(
+      shouldRefreshDirectoryForFilesChanged("/home/agent/Desktop", [
+        "/home/agent/Desktop/new.txt",
+      ]),
+    ).toBe(true);
+    expect(
+      shouldRefreshDirectoryForFilesChanged("/home/agent/Desktop/project", [
+        "/home/agent/Desktop",
+      ]),
+    ).toBe(true);
+    expect(
+      shouldRefreshDirectoryForFilesChanged("/home/agent/Desktop", [
+        "/home/agent/Documents/new.txt",
+      ]),
+    ).toBe(false);
   });
 
   it("sanitizes unsafe file names for create, upload, and rename", () => {

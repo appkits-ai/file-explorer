@@ -152,4 +152,13 @@ describe("File Explorer mobile menu contracts", () => {
     expect(styles).toContain("background: var(--app-surface);");
     expect(styles).toContain("background: var(--app-panel);");
   });
+
+  it("refreshes the visible directory when the host reports changed files", () => {
+    const source = readSource("src/main.tsx");
+
+    expect(source).toContain("appkits.files.onChanged");
+    expect(source).toContain("shouldRefreshDirectoryForFilesChanged");
+    expect(source).toContain("filesChangedRefreshTimeoutRef");
+    expect(source).toContain("void refresh(currentPathRef.current)");
+  });
 });

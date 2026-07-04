@@ -46,6 +46,7 @@ import {
   sanitizeFilename,
   searchEntries,
   selectedPathFromLaunchParams,
+  shouldRefreshDirectoryForFilesChanged,
   uniquePath,
   uploadTargets,
   visiblePath,
@@ -258,6 +259,7 @@ function App() {
   const pendingLaunchSelectionRef = React.useRef<string | null>(null);
   const pendingCreateCommitRef = React.useRef(false);
   const contextMenuActionsRef = React.useRef(new Map<string, () => void>());
+  const filesChangedRefreshTimeoutRef = React.useRef<number | null>(null);
   const longPressRef = React.useRef<{
     pointerId: number;
     x: number;
@@ -412,11 +414,39 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    return appkits.contextMenu.onSelect((itemId) => {
-      const action = contextMenuActionsRef.current.get(itemId);
+    return appkits.contextMenu.onSelect((event) => {
+      const action = contextMenuActionsRef.current.get(event.itemId);
       contextMenuActionsRef.current.clear();
       action?.();
     });
+  }, []);
+
+  React.useEffect(() => {
+    return appkits.files.onChanged((event) => {
+      if (
+        !shouldRefreshDirectoryForFilesChanged(
+          currentPathRef.current,
+          event.paths,
+        )
+      ) {
+        return;
+      }
+      if (filesChangedRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(filesChangedRefreshTimeoutRef.current);
+      }
+      filesChangedRefreshTimeoutRef.current = window.setTimeout(() => {
+        filesChangedRefreshTimeoutRef.current = null;
+        void refresh(currentPathRef.current);
+      }, 80);
+    });
+  }, [refresh]);
+
+  React.useEffect(() => {
+    return () => {
+      if (filesChangedRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(filesChangedRefreshTimeoutRef.current);
+      }
+    };
   }, []);
 
   const visibleEntries = React.useMemo(() => {

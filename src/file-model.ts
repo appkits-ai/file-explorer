@@ -85,6 +85,23 @@ export function parentPath(path: string): string {
   return parent.startsWith(HOME_ROOT) ? parent : HOME_ROOT;
 }
 
+export function shouldRefreshDirectoryForFilesChanged(
+  directory: string,
+  changedPaths: readonly string[] | undefined,
+): boolean {
+  if (!changedPaths || changedPaths.length === 0) return true;
+  const root = normalizePath(directory);
+  return changedPaths.some((path) => {
+    const normalized = normalizePath(path);
+    return (
+      normalized === root ||
+      parentPath(normalized) === root ||
+      normalized.startsWith(`${root}/`) ||
+      root.startsWith(`${normalized}/`)
+    );
+  });
+}
+
 export function joinPath(directory: string, filename: string): string {
   return normalizePath(`${normalizePath(directory)}/${filename}`);
 }

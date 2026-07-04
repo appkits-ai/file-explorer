@@ -161,4 +161,13 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain("filesChangedRefreshTimeoutRef");
     expect(source).toContain("void refresh(currentPathRef.current)");
   });
+
+  it("uses the SDK file transfer helper for drag payloads", () => {
+    const source = readSource("src/main.tsx");
+
+    expect(source).toContain("writeAppKitsFileTransferData");
+    expect(source).not.toContain(
+      'setData("application/x-appkits-file-entry"',
+    );
+  });
 });

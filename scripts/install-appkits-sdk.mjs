@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
-const CORE_REF = "0a28e5e0fda8169bf5df877ad2db365260d0d263";
+const CORE_REF = "a611d5bbf9dfc55d9ffb40872f5082e25d0ba613";
 const sdkInstallRoot = path.resolve("node_modules/@appkits-ai/sdk");
 const uiInstallRoot = path.resolve("node_modules/@appkits-ai/ui");
 const sdkClientTypes = path.join(sdkInstallRoot, "dist/client/index.d.ts");
@@ -20,40 +19,56 @@ const requiredSdkClientTypeMarkers = [
   "onChanged(handler: (event: AppKitsFilesChangedEvent) => void)",
   "AppKitsContextMenuSelectEvent",
   "onSelect(handler: (event: AppKitsContextMenuSelectEvent) => void)",
+  "APPKITS_FILE_TRANSFER_MIME",
+  "AppKitsFileTransferEntry",
+  "writeAppKitsFileTransferData",
 ];
 const requiredSdkClientRuntimeMarkers = [
   'on("files.changed"',
   "handler({ itemId: data.itemId })",
+  "APPKITS_FILE_TRANSFER_MIME",
+  "writeAppKitsFileTransferData",
+  "dataTransfer.setData(APPKITS_FILE_TRANSFER_MIME",
 ];
 
 if (installedSdkIsCurrent() && installedUiIsCurrent()) {
   process.exit(0);
 }
 
-const { sdkRoot: sourceSdkRoot, uiRoot: sourceUiRoot } = resolvePackageSources();
+const {
+  sdkRoot: sourceSdkRoot,
+  uiRoot: sourceUiRoot,
+  cleanupRoot,
+} = resolvePackageSources();
 
-const builtClientTypes = path.join(sourceSdkRoot, "dist/client/index.d.ts");
-if (!fs.existsSync(builtClientTypes)) {
-  throw new Error(`appkits_sdk_client_missing:${sourceSdkRoot}`);
-}
-if (!sdkBuildSupportsRequiredDesktopBridge(sourceSdkRoot)) {
-  throw new Error(`appkits_sdk_source_stale:${sourceSdkRoot}`);
-}
-const builtUiTypes = path.join(sourceUiRoot, "dist/components/button.d.ts");
-if (!fs.existsSync(builtUiTypes)) {
-  throw new Error(`appkits_ui_component_missing:${sourceUiRoot}`);
-}
+try {
+  const builtClientTypes = path.join(sourceSdkRoot, "dist/client/index.d.ts");
+  if (!fs.existsSync(builtClientTypes)) {
+    throw new Error(`appkits_sdk_client_missing:${sourceSdkRoot}`);
+  }
+  if (!sdkBuildSupportsRequiredDesktopBridge(sourceSdkRoot)) {
+    throw new Error(`appkits_sdk_source_stale:${sourceSdkRoot}`);
+  }
+  const builtUiTypes = path.join(sourceUiRoot, "dist/components/button.d.ts");
+  if (!fs.existsSync(builtUiTypes)) {
+    throw new Error(`appkits_ui_component_missing:${sourceUiRoot}`);
+  }
 
-fs.rmSync(sdkInstallRoot, { recursive: true, force: true });
-fs.mkdirSync(sdkInstallRoot, { recursive: true });
-copyPackage(sourceSdkRoot, sdkInstallRoot, "appkits_sdk");
+  fs.rmSync(sdkInstallRoot, { recursive: true, force: true });
+  fs.mkdirSync(sdkInstallRoot, { recursive: true });
+  copyPackage(sourceSdkRoot, sdkInstallRoot, "appkits_sdk");
 
-fs.rmSync(uiInstallRoot, { recursive: true, force: true });
-fs.mkdirSync(uiInstallRoot, { recursive: true });
-copyPackage(sourceUiRoot, uiInstallRoot, "appkits_ui");
+  fs.rmSync(uiInstallRoot, { recursive: true, force: true });
+  fs.mkdirSync(uiInstallRoot, { recursive: true });
+  copyPackage(sourceUiRoot, uiInstallRoot, "appkits_ui");
 
-if (!installedSdkIsCurrent() || !installedUiIsCurrent()) {
-  throw new Error(`appkits_sdk_invalid:${sdkInstallRoot}`);
+  if (!installedSdkIsCurrent() || !installedUiIsCurrent()) {
+    throw new Error(`appkits_sdk_invalid:${sdkInstallRoot}`);
+  }
+} finally {
+  if (cleanupRoot) {
+    fs.rmSync(cleanupRoot, { recursive: true, force: true });
+  }
 }
 
 function installedSdkIsCurrent() {
@@ -122,9 +137,11 @@ function resolvePackageSources() {
     };
   }
 
-  const coreRoot = process.env.APPKITS_CORE_ROOT
+  const preparedCore = process.env.APPKITS_CORE_ROOT
     ? path.resolve(process.env.APPKITS_CORE_ROOT)
     : prepareCore();
+  const coreRoot =
+    typeof preparedCore === "string" ? preparedCore : preparedCore.coreRoot;
   return {
     sdkRoot: process.env.APPKITS_CORE_SDK_PATH
       ? path.resolve(process.env.APPKITS_CORE_SDK_PATH)
@@ -132,6 +149,8 @@ function resolvePackageSources() {
     uiRoot: process.env.APPKITS_CORE_UI_PATH
       ? path.resolve(process.env.APPKITS_CORE_UI_PATH)
       : path.join(coreRoot, "packages/ui"),
+    cleanupRoot:
+      typeof preparedCore === "string" ? undefined : preparedCore.tempRoot,
   };
 }
 
@@ -139,7 +158,11 @@ function prepareCore() {
   const repository =
     process.env.APPKITS_CORE_REPOSITORY || "https://github.com/appkits-ai/core";
   const ref = process.env.APPKITS_CORE_REF || CORE_REF;
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "appkits-core-sdk-"));
+  const tempParent = process.env.APPKITS_CORE_TMPDIR
+    ? path.resolve(process.env.APPKITS_CORE_TMPDIR)
+    : path.resolve(".worktrees/.cache");
+  fs.mkdirSync(tempParent, { recursive: true });
+  const tempRoot = fs.mkdtempSync(path.join(tempParent, "appkits-core-sdk-"));
   const coreRoot = path.join(tempRoot, "core");
 
   execFileSync(
@@ -161,7 +184,7 @@ function prepareCore() {
     stdio: "inherit",
   });
 
-  return coreRoot;
+  return { coreRoot, tempRoot };
 }
 
 function copyPackage(sourceRoot, installRoot, label) {

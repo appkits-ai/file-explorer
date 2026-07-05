@@ -27,6 +27,7 @@ import {
   childEntries,
   contextMenuItemIdFromSelection,
   desktopFileIconName,
+  filterVisibleEntries,
   fileTypeKind,
   filenameFromPath,
   formatSize,
@@ -62,6 +63,7 @@ import "./styles.css";
 
 const FILE_ICON_BODY_READ_DELAY_MS = 80;
 const MAX_CONCURRENT_FILE_ICON_BODY_READS = 2;
+const APPKITS_HOST_ORIGIN = "https://appkits.ai";
 
 type ContextMenuState =
   | { x: number; y: number; type: "background"; targetDirectory: string }
@@ -196,6 +198,26 @@ function displayPath(locale: string | undefined, path: string): string {
   return visiblePath(path);
 }
 
+function resolveHostIconUrl(iconUrl: string | undefined): string {
+  const trimmed = iconUrl?.trim() ?? "";
+  if (!trimmed) return "";
+  if (trimmed.startsWith("/")) {
+    return new URL(trimmed, appkitsHostOrigin()).toString();
+  }
+  return trimmed;
+}
+
+function appkitsHostOrigin(): string {
+  if (typeof document === "undefined" || !document.referrer) {
+    return APPKITS_HOST_ORIGIN;
+  }
+  try {
+    return new URL(document.referrer).origin;
+  } catch {
+    return APPKITS_HOST_ORIGIN;
+  }
+}
+
 function pathFromDisplayPath(locale: string | undefined, path: string): string {
   const trimmed = path.trim();
   const home = t(locale, "path.home");
@@ -300,8 +322,11 @@ function scheduleFileIconBodyRead(
   };
 }
 
-function treeNodeIconEntry(node: TreeNode): ExplorerEntry {
-  return {
+function treeNodeIconEntry(
+  node: TreeNode,
+  entryMap: ReadonlyMap<string, ExplorerEntry>,
+): ExplorerEntry {
+  return entryMap.get(node.path) ?? {
     path: node.path,
     name: node.path === HOME_ROOT ? "home" : node.name,
     kind: "directory",
@@ -319,6 +344,7 @@ function App() {
   const [pathEditing, setPathEditing] = React.useState(false);
   const [pathEditorValue, setPathEditorValue] = React.useState(() => t(systemLocale(), "path.home"));
   const [viewMode, setViewMode] = React.useState<ExplorerViewMode>("details");
+  const [showHiddenFiles, setShowHiddenFiles] = React.useState(false);
   const [clipboard, setClipboard] = React.useState<ClipboardState | null>(null);
   const [selectionRect, setSelectionRect] = React.useState<SelectionRect | null>(null);
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreate | null>(null);
@@ -585,9 +611,15 @@ function App() {
     };
   }, []);
 
+  const visibleWorkspaceEntries = React.useMemo(
+    () => filterVisibleEntries(entries, showHiddenFiles),
+    [entries, showHiddenFiles],
+  );
   const visibleEntries = React.useMemo(() => {
-    return query.trim() ? searchEntries(entries, currentPath, query) : childEntries(entries, currentPath);
-  }, [currentPath, entries, query]);
+    return query.trim()
+      ? searchEntries(visibleWorkspaceEntries, currentPath, query)
+      : childEntries(visibleWorkspaceEntries, currentPath);
+  }, [currentPath, query, visibleWorkspaceEntries]);
   const visibleEntriesWithPending = React.useMemo(() => {
     if (!pendingCreate || pendingCreate.directory !== currentPath || query.trim()) {
       return visibleEntries;
@@ -597,8 +629,8 @@ function App() {
       ...visibleEntries,
     ];
   }, [currentPath, pendingCreate, query, renameValue, visibleEntries]);
-  const tree = React.useMemo(() => buildDirectoryTree(entries), [entries]);
-  const entryMap = React.useMemo(() => new Map(entries.map((entry) => [entry.path, entry])), [entries]);
+  const tree = React.useMemo(() => buildDirectoryTree(visibleWorkspaceEntries), [visibleWorkspaceEntries]);
+  const entryMap = React.useMemo(() => new Map(visibleWorkspaceEntries.map((entry) => [entry.path, entry])), [visibleWorkspaceEntries]);
   const selectedEntrySet = React.useMemo(() => new Set(selectedPaths), [selectedPaths]);
   const selectedEntries = React.useMemo(
     () => selectedPaths.map((path) => entryMap.get(path)).filter((entry): entry is ExplorerEntry => Boolean(entry)),
@@ -743,6 +775,9 @@ function App() {
       }),
       item("view-gallery", t(locale, "view.gallery"), "gallery", () => setViewMode("gallery"), {
         checked: viewMode === "gallery",
+      }),
+      item("view-show-hidden-files", t(locale, "view.showHiddenFiles"), "eye", () => setShowHiddenFiles((current) => !current), {
+        checked: showHiddenFiles,
       }),
     ];
     const viewMenu = () => submenu("view", t(locale, "view.mode"), "view", viewItems);
@@ -1714,6 +1749,7 @@ function App() {
             onOpen={navigate}
             openTreeContextMenu={openTreeContextMenu}
             moveDroppedEntries={moveDroppedEntries}
+            entryMap={entryMap}
           />
         </aside>
 
@@ -1982,6 +2018,7 @@ function Tree({
   onOpen,
   openTreeContextMenu,
   moveDroppedEntries,
+  entryMap,
 }: {
   node: TreeNode;
   currentPath: string;
@@ -1992,6 +2029,7 @@ function Tree({
     event: React.DragEvent,
     targetDirectory: string,
   ) => Promise<boolean>;
+  entryMap: ReadonlyMap<string, ExplorerEntry>;
 }) {
   return (
     <div className="tree-node">
@@ -2014,7 +2052,7 @@ function Tree({
           void moveDroppedEntries(event, node.path);
         }}
       >
-        <FileIcon entry={treeNodeIconEntry(node)} />
+        <FileIcon entry={treeNodeIconEntry(node, entryMap)} />
         <span>{node.path === HOME_ROOT ? t(locale, "path.home") : node.name}</span>
       </button>
       {node.children.length > 0 ? (
@@ -2028,6 +2066,7 @@ function Tree({
               onOpen={onOpen}
               openTreeContextMenu={openTreeContextMenu}
               moveDroppedEntries={moveDroppedEntries}
+              entryMap={entryMap}
             />
           ))}
         </div>
@@ -2118,7 +2157,7 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
       entry.path,
       (file) => {
         const appFile = parseAppKitsAppFile(decodeReadResult(file));
-        setAppIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl || "");
+        setAppIconUrl(resolveHostIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl));
         setAppIconFailed(false);
       },
       () => {

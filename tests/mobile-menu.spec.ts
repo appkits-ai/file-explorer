@@ -159,10 +159,45 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource.indexOf('if (type === "app")')).toBeLessThan(
       fileIconSource.indexOf('<span className="file-icon"'),
     );
-    expect(fileIconSource).toContain("file-app-icon-placeholder");
+    expect(source).toContain("file-app-icon-placeholder");
     expect(styles).toContain(".file-icon-asset");
     expect(styles).toContain(".file-icon-image");
     expect(styles).toContain(".file-app-icon-placeholder");
+  });
+
+  it("deduplicates host lifecycle feedback that can loop across multiple windows", () => {
+    const source = readSource("src/main.tsx");
+
+    expect(source).toContain("lastAppliedLocaleRef");
+    expect(source).toContain("lastWindowTitleRef");
+    expect(source).toContain("lastLaunchSignatureRef");
+    expect(source).toContain("lastFilesChangedSignatureRef");
+    expect(source).toContain("setWindowTitleForLocale");
+    expect(source).toContain("filesChangedEventSignature");
+    expect(source).not.toContain(
+      "void appkits.window.setTitle(localizedAppTitle(resolvedLocale));",
+    );
+  });
+
+  it("shares tree and file-list icons without fallback image assets", () => {
+    const source = readSource("src/main.tsx");
+    const fileIconSource = source.slice(
+      source.indexOf("function FileIcon("),
+      source.indexOf("function decodeReadResult("),
+    );
+    const treeSource = source.slice(
+      source.indexOf("function Tree("),
+      source.indexOf("function ToolbarButton("),
+    );
+
+    expect(source).not.toContain("DEFAULT_FILE_ICON_ASSET");
+    expect(fileIconSource).toContain("BlankFileIcon");
+    expect(fileIconSource).toContain("scheduleFileIconBodyRead");
+    expect(fileIconSource).toContain("setIconAssetFailed(true)");
+    expect(treeSource).toContain("treeNodeIconEntry(node)");
+    expect(treeSource).toContain("<FileIcon entry={treeNodeIconEntry(node)} />");
+    expect(treeSource).not.toContain("<FolderOpen");
+    expect(treeSource).not.toContain("<Folder");
   });
 
   it("follows the host theme while preserving the earlier light surface", () => {

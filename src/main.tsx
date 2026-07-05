@@ -5,8 +5,6 @@ import {
   ClipboardPaste,
   Copy,
   FilePlus2,
-  Folder,
-  FolderOpen,
   FolderPlus,
   FolderUp,
   Images,
@@ -62,7 +60,8 @@ import {
 import { pluralSuffix, t, type TranslationKey } from "./i18n";
 import "./styles.css";
 
-const DEFAULT_FILE_ICON_ASSET = "/icons/stitch/document_icon.svg";
+const FILE_ICON_BODY_READ_DELAY_MS = 80;
+const MAX_CONCURRENT_FILE_ICON_BODY_READS = 2;
 
 type ContextMenuState =
   | { x: number; y: number; type: "background"; targetDirectory: string }
@@ -112,6 +111,20 @@ type ShellFileOpenerSummary = {
   icon?: string;
   appId?: string;
 };
+
+type FilesChangedEvent = Parameters<Parameters<typeof appkits.files.onChanged>[0]>[0];
+type FileReadResult = Awaited<ReturnType<typeof appkits.files.read>>;
+
+interface ScheduledFileIconBodyRead {
+  path: string;
+  cancelled: boolean;
+  onRead: (file: FileReadResult) => void;
+  onError: () => void;
+}
+
+const pendingFileIconBodyReads: ScheduledFileIconBodyRead[] = [];
+let activeFileIconBodyReads = 0;
+let fileIconBodyReadTimer: number | null = null;
 
 interface ClipboardState {
   mode: "copy" | "cut";
@@ -224,6 +237,77 @@ function applyTheme(theme: string | undefined) {
   document.documentElement.style.colorScheme = normalized;
 }
 
+function launchParamsSignature(params: Record<string, unknown>): string {
+  return JSON.stringify({
+    path: pathFromLaunchParams(params),
+    selectedPath: selectedPathFromLaunchParams(params),
+  });
+}
+
+function filesChangedEventSignature(event: FilesChangedEvent): string {
+  return JSON.stringify({
+    profileId: event.profileId,
+    reason: event.reason || "",
+    objectCount: event.objectCount ?? null,
+    signature: event.signature || "",
+    paths: [...(event.paths ?? [])].sort(),
+  });
+}
+
+function drainFileIconBodyReads(): void {
+  while (
+    activeFileIconBodyReads < MAX_CONCURRENT_FILE_ICON_BODY_READS &&
+    pendingFileIconBodyReads.length > 0
+  ) {
+    const task = pendingFileIconBodyReads.shift();
+    if (!task || task.cancelled) continue;
+    activeFileIconBodyReads += 1;
+    void appkits.files
+      .read(task.path)
+      .then((file) => {
+        if (!task.cancelled) task.onRead(file);
+      })
+      .catch(() => {
+        if (!task.cancelled) task.onError();
+      })
+      .finally(() => {
+        activeFileIconBodyReads = Math.max(0, activeFileIconBodyReads - 1);
+        drainFileIconBodyReads();
+      });
+  }
+}
+
+function scheduleFileIconBodyRead(
+  path: string,
+  onRead: (file: FileReadResult) => void,
+  onError: () => void,
+): () => void {
+  const task: ScheduledFileIconBodyRead = {
+    path,
+    cancelled: false,
+    onRead,
+    onError,
+  };
+  pendingFileIconBodyReads.push(task);
+  if (fileIconBodyReadTimer === null) {
+    fileIconBodyReadTimer = window.setTimeout(() => {
+      fileIconBodyReadTimer = null;
+      drainFileIconBodyReads();
+    }, FILE_ICON_BODY_READ_DELAY_MS);
+  }
+  return () => {
+    task.cancelled = true;
+  };
+}
+
+function treeNodeIconEntry(node: TreeNode): ExplorerEntry {
+  return {
+    path: node.path,
+    name: node.path === HOME_ROOT ? "home" : node.name,
+    kind: "directory",
+  };
+}
+
 function App() {
   const [entries, setEntries] = React.useState<ExplorerEntry[]>([]);
   const [currentPath, setCurrentPath] = React.useState(HOME_ROOT);
@@ -263,6 +347,10 @@ function App() {
   const pendingCreateCommitRef = React.useRef(false);
   const contextMenuActionsRef = React.useRef(new Map<string, () => void>());
   const filesChangedRefreshTimeoutRef = React.useRef<number | null>(null);
+  const lastAppliedLocaleRef = React.useRef<string | null>(null);
+  const lastWindowTitleRef = React.useRef<string | null>(null);
+  const lastLaunchSignatureRef = React.useRef<string | null>(null);
+  const lastFilesChangedSignatureRef = React.useRef<string | null>(null);
   const refreshPromisesRef = React.useRef(new Map<string, Promise<void>>());
   const openerCacheRef = React.useRef(
     new Map<string, ShellFileOpenerSummary[]>(),
@@ -387,27 +475,42 @@ function App() {
   }, [locale]);
 
   React.useEffect(() => {
+    const setWindowTitleForLocale = (resolvedLocale: string) => {
+      const nextTitle = localizedAppTitle(resolvedLocale);
+      if (lastWindowTitleRef.current === nextTitle) return;
+      lastWindowTitleRef.current = nextTitle;
+      void appkits.window.setTitle(nextTitle);
+    };
     const applyLocale = (nextLocale: string | undefined) => {
       const resolvedLocale = nextLocale || systemLocale();
-      setLocale(resolvedLocale);
-      void appkits.window.setTitle(localizedAppTitle(resolvedLocale));
+      if (lastAppliedLocaleRef.current !== resolvedLocale) {
+        lastAppliedLocaleRef.current = resolvedLocale;
+        setLocale(resolvedLocale);
+      }
+      setWindowTitleForLocale(resolvedLocale);
+    };
+    const applyLaunchParams = (
+      params: Record<string, unknown>,
+      resetSelection: boolean,
+    ) => {
+      const signature = launchParamsSignature(params);
+      if (lastLaunchSignatureRef.current === signature) return;
+      lastLaunchSignatureRef.current = signature;
+      const next = pathFromLaunchParams(params);
+      pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
+      markDirectoryLoading(next);
+      setCurrentPath(next);
+      if (resetSelection) {
+        setSelectedPaths([]);
+        setActivePath(null);
+      }
     };
     applyLocale(systemLocale());
     void appkits.locale.current().then(applyLocale).catch(() => undefined);
     const offLocale = appkits.locale.onChange(applyLocale);
-    void appkits.launch.params().then((params) => {
-      const next = pathFromLaunchParams(params);
-      pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
-      markDirectoryLoading(next);
-      setCurrentPath(next);
-    });
+    void appkits.launch.params().then((params) => applyLaunchParams(params, false));
     const offLaunch = appkits.launch.onChange((params) => {
-      const next = pathFromLaunchParams(params);
-      pendingLaunchSelectionRef.current = selectedPathFromLaunchParams(params);
-      markDirectoryLoading(next);
-      setCurrentPath(next);
-      setSelectedPaths([]);
-      setActivePath(null);
+      applyLaunchParams(params, true);
     });
     return () => {
       offLaunch();
@@ -451,6 +554,9 @@ function App() {
 
   React.useEffect(() => {
     return appkits.files.onChanged((event) => {
+      const signature = filesChangedEventSignature(event);
+      if (lastFilesChangedSignatureRef.current === signature) return;
+      lastFilesChangedSignatureRef.current = signature;
       openerCacheRef.current.clear();
       openerRequestRef.current.clear();
       if (
@@ -1908,7 +2014,7 @@ function Tree({
           void moveDroppedEntries(event, node.path);
         }}
       >
-        {node.path === HOME_ROOT ? <FolderOpen size={16} /> : <Folder size={16} />}
+        <FileIcon entry={treeNodeIconEntry(node)} />
         <span>{node.path === HOME_ROOT ? t(locale, "path.home") : node.name}</span>
       </button>
       {node.children.length > 0 ? (
@@ -1960,33 +2066,44 @@ function ToolbarButton({
   );
 }
 
+function BlankFileIcon({ large = false }: { large?: boolean }) {
+  return (
+    <span
+      className={large ? "file-app-icon-placeholder large" : "file-app-icon-placeholder"}
+      aria-hidden="true"
+    />
+  );
+}
+
 function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: boolean }) {
   const [thumbnail, setThumbnail] = React.useState("");
   const [appIconUrl, setAppIconUrl] = React.useState("");
   const [appIconFailed, setAppIconFailed] = React.useState(false);
+  const [iconAssetFailed, setIconAssetFailed] = React.useState(false);
   const type = fileTypeKind(entry);
   const iconName = desktopFileIconName(entry);
-  const iconAsset = getDesktopIconAssetPath(iconName) || DEFAULT_FILE_ICON_ASSET;
+  const iconAsset = getDesktopIconAssetPath(iconName);
+
+  React.useEffect(() => {
+    setIconAssetFailed(false);
+  }, [iconAsset]);
 
   React.useEffect(() => {
     if (type !== "image" || entry.temporary) {
       setThumbnail("");
       return;
     }
-    let cancelled = false;
-    void appkits.files.read(entry.path)
-      .then((file) => {
-        if (cancelled || !file.bodyBase64) return;
+    setThumbnail("");
+    return scheduleFileIconBodyRead(
+      entry.path,
+      (file) => {
+        if (!file.bodyBase64) return;
         const contentType =
           file.contentType || entry.contentType || "image/png";
         setThumbnail(`data:${contentType};base64,${file.bodyBase64}`);
-      })
-      .catch(() => {
-        if (!cancelled) setThumbnail("");
-      });
-    return () => {
-      cancelled = true;
-    };
+      },
+      () => setThumbnail(""),
+    );
   }, [entry.contentType, entry.path, entry.temporary, type]);
 
   React.useEffect(() => {
@@ -1995,23 +2112,20 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
       setAppIconFailed(false);
       return;
     }
-    let cancelled = false;
-    void appkits.files.read(entry.path)
-      .then((file) => {
-        if (cancelled) return;
+    setAppIconUrl("");
+    setAppIconFailed(false);
+    return scheduleFileIconBodyRead(
+      entry.path,
+      (file) => {
         const appFile = parseAppKitsAppFile(decodeReadResult(file));
         setAppIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl || "");
         setAppIconFailed(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAppIconUrl("");
-          setAppIconFailed(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+      },
+      () => {
+        setAppIconUrl("");
+        setAppIconFailed(false);
+      },
+    );
   }, [entry.path, entry.temporary, entry.updatedAt, type]);
 
   if (thumbnail) {
@@ -2034,16 +2148,17 @@ function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: bool
     );
   }
   if (type === "app") {
-    return (
-      <span
-        className={large ? "file-app-icon-placeholder large" : "file-app-icon-placeholder"}
-        aria-hidden="true"
-      />
-    );
+    return <BlankFileIcon large={large} />;
   }
+  if (!iconAsset || iconAssetFailed) return <BlankFileIcon large={large} />;
   return (
     <span className="file-icon" data-icon={iconName} data-large={large ? "true" : undefined}>
-      <img src={iconAsset} alt="" className="file-icon-asset" />
+      <img
+        src={iconAsset}
+        alt=""
+        className="file-icon-asset"
+        onError={() => setIconAssetFailed(true)}
+      />
     </span>
   );
 }

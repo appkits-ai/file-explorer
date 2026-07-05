@@ -7,6 +7,7 @@ import {
   contextMenuItemIdFromSelection,
   createTargetPath,
   desktopFileIconName,
+  filterVisibleEntries,
   fileTypeLabel,
   isTextPreviewable,
   mergeDirectoryListing,
@@ -75,6 +76,50 @@ describe("file explorer model", () => {
   it("builds a directory tree from file paths", () => {
     const tree = buildDirectoryTree(entries);
     expect(tree.children.map((child) => child.name)).toEqual(["project"]);
+  });
+
+  it("hides dot files and dot-folder descendants until show hidden is enabled", () => {
+    const hiddenEntries: ExplorerEntry[] = [
+      ...entries,
+      { path: "/home/agent/.env", name: ".env", kind: "file" },
+      { path: "/home/agent/.appkits", name: ".appkits", kind: "directory" },
+      {
+        path: "/home/agent/.appkits/settings.json",
+        name: "settings.json",
+        kind: "file",
+      },
+      { path: "/home/agent/project/.cache", name: ".cache", kind: "directory" },
+      {
+        path: "/home/agent/project/.cache/index.json",
+        name: "index.json",
+        kind: "file",
+      },
+    ];
+
+    expect(
+      filterVisibleEntries(hiddenEntries, false).map((entry) => entry.path),
+    ).toEqual(entries.map((entry) => entry.path));
+    expect(
+      childEntries(hiddenEntries, HOME_ROOT, { showHiddenFiles: false }).map(
+        (entry) => entry.name,
+      ),
+    ).toEqual(["project", "readme.md"]);
+    expect(
+      searchEntries(hiddenEntries, HOME_ROOT, "settings", {
+        showHiddenFiles: false,
+      }),
+    ).toEqual([]);
+    expect(
+      buildDirectoryTree(hiddenEntries, { showHiddenFiles: false }).children.map(
+        (child) => child.name,
+      ),
+    ).toEqual(["project"]);
+
+    expect(
+      childEntries(hiddenEntries, HOME_ROOT, { showHiddenFiles: true }).map(
+        (entry) => entry.name,
+      ),
+    ).toEqual([".appkits", "project", ".env", "readme.md"]);
   });
 
   it("filters search across the workspace", () => {

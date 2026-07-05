@@ -83,6 +83,10 @@ export interface SelectionState {
   baseSelection: string[];
 }
 
+export interface VisibilityOptions {
+  showHiddenFiles?: boolean;
+}
+
 export function filenameFromPath(path: string): string {
   const normalized = normalizePath(path);
   if (normalized === HOME_ROOT) return HOME_DISPLAY_NAME;
@@ -166,12 +170,41 @@ export function breadcrumbSegments(path: string): BreadcrumbSegment[] {
   ];
 }
 
+export function isHiddenPathSegment(segment: string): boolean {
+  return segment.startsWith(".") && segment.length > 1;
+}
+
+export function isHiddenEntryPath(path: string): boolean {
+  const normalized = normalizePath(path);
+  if (normalized === HOME_ROOT) return false;
+  return normalized
+    .slice(HOME_ROOT.length + 1)
+    .split("/")
+    .some(isHiddenPathSegment);
+}
+
+export function filterVisibleEntries(
+  entries: ExplorerEntry[],
+  showHiddenFiles: boolean,
+): ExplorerEntry[] {
+  if (showHiddenFiles) return entries;
+  return entries.filter((entry) => !isHiddenEntryPath(entry.path));
+}
+
+function entriesForVisibility(
+  entries: ExplorerEntry[],
+  options: VisibilityOptions,
+): ExplorerEntry[] {
+  return filterVisibleEntries(entries, options.showHiddenFiles === true);
+}
+
 export function childEntries(
   entries: ExplorerEntry[],
   directory: string,
+  options: VisibilityOptions = {},
 ): ExplorerEntry[] {
   const root = normalizePath(directory);
-  return entries
+  return entriesForVisibility(entries, options)
     .filter((entry) => parentPath(entry.path) === root)
     .sort((a, b) => {
       if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
@@ -209,9 +242,13 @@ export function mergeDirectoryListing(
   );
 }
 
-export function buildDirectoryTree(entries: ExplorerEntry[]): TreeNode {
+export function buildDirectoryTree(
+  entries: ExplorerEntry[],
+  options: VisibilityOptions = {},
+): TreeNode {
+  const visibleEntries = entriesForVisibility(entries, options);
   const directories = new Set([HOME_ROOT]);
-  for (const entry of entries) {
+  for (const entry of visibleEntries) {
     let current = entry.kind === "directory" ? entry.path : parentPath(entry.path);
     while (current.startsWith(HOME_ROOT)) {
       directories.add(current);
@@ -239,11 +276,12 @@ export function searchEntries(
   entries: ExplorerEntry[],
   directory: string,
   query: string,
+  options: VisibilityOptions = {},
 ): ExplorerEntry[] {
   const root = normalizePath(directory);
   const trimmed = query.trim().toLowerCase();
-  if (!trimmed) return childEntries(entries, directory);
-  return entries
+  if (!trimmed) return childEntries(entries, directory, options);
+  return entriesForVisibility(entries, options)
     .filter((entry) => entry.path !== root && entry.name.toLowerCase().includes(trimmed))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

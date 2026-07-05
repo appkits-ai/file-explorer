@@ -103,6 +103,7 @@ const en = {
   "toolbar.upload": "Upload",
   "view.details": "Details",
   "view.gallery": "Gallery",
+  "view.showHiddenFiles": "Show hidden files",
   "view.icons": "Icons",
   "view.mode": "View mode",
 } as const;
@@ -214,6 +215,7 @@ const zh: Record<TranslationKey, string> = {
   "toolbar.upload": "上传",
   "view.details": "详情",
   "view.gallery": "画廊",
+  "view.showHiddenFiles": "显示隐藏文件",
   "view.icons": "图标",
   "view.mode": "视图模式",
 };

@@ -4,6 +4,13 @@ import { describe, expect, it } from "vitest";
 
 const readSource = (relativePath: string) =>
   fs.readFileSync(path.resolve(relativePath), "utf8");
+const compact = (source: string) =>
+  source
+    .replace(/\s+/g, " ")
+    .replace(/\s+\./g, ".")
+    .replace(/\(\s+/g, "(")
+    .replace(/,\s+\)/g, ")")
+    .replace(/\s+\)/g, ")");
 
 describe("File Explorer mobile menu contracts", () => {
   it("delegates context menus to the parent shell", () => {
@@ -148,16 +155,17 @@ describe("File Explorer mobile menu contracts", () => {
       source.indexOf("function FileIcon("),
       source.indexOf("function decodeReadResult("),
     );
+    const compactFileIconSource = compact(fileIconSource);
 
     expect(source).toContain('appkits.locale.current()');
     expect(source).toContain('t(locale, "toolbar.refresh")');
     expect(source).toContain("desktopFileIconName(entry)");
     expect(source).toContain("getDesktopIconAssetPath(iconName)");
     expect(source).toContain("parseAppKitsAppFile");
-    expect(fileIconSource).toContain("appFile?.marketplaceIconUrl || appFile?.iconUrl || \"\"");
+    expect(compactFileIconSource).toContain("resolveHostIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl)");
     expect(fileIconSource).toContain('if (type === "app")');
-    expect(fileIconSource.indexOf('if (type === "app")')).toBeLessThan(
-      fileIconSource.indexOf('<span className="file-icon"'),
+    expect(compactFileIconSource.indexOf('if (type === "app")')).toBeLessThan(
+      compactFileIconSource.indexOf('<span className="file-icon"'),
     );
     expect(source).toContain("file-app-icon-placeholder");
     expect(styles).toContain(".file-icon-asset");
@@ -189,15 +197,41 @@ describe("File Explorer mobile menu contracts", () => {
       source.indexOf("function Tree("),
       source.indexOf("function ToolbarButton("),
     );
+    const compactTreeSource = compact(treeSource);
 
     expect(source).not.toContain("DEFAULT_FILE_ICON_ASSET");
     expect(fileIconSource).toContain("BlankFileIcon");
     expect(fileIconSource).toContain("scheduleFileIconBodyRead");
     expect(fileIconSource).toContain("setIconAssetFailed(true)");
-    expect(treeSource).toContain("treeNodeIconEntry(node)");
-    expect(treeSource).toContain("<FileIcon entry={treeNodeIconEntry(node)} />");
+    expect(compactTreeSource).toContain("treeNodeIconEntry(node, entryMap)");
+    expect(compactTreeSource).toContain("<FileIcon entry={treeNodeIconEntry(node, entryMap)} />");
     expect(treeSource).not.toContain("<FolderOpen");
     expect(treeSource).not.toContain("<Folder");
+  });
+
+  it("hides dot files by default and exposes show hidden in every explorer menu surface", () => {
+    const source = readSource("src/main.tsx");
+    const model = readSource("src/file-model.ts");
+
+    expect(source).toContain("const [showHiddenFiles, setShowHiddenFiles]");
+    expect(source).toContain("filterVisibleEntries(entries, showHiddenFiles)");
+    expect(source).toContain('"view-show-hidden-files"');
+    expect(source).toContain('t(locale, "view.showHiddenFiles")');
+    expect(source).toContain("checked: showHiddenFiles");
+    expect(model).toContain("isHiddenPathSegment");
+    expect(model).toContain("filterVisibleEntries");
+  });
+
+  it("resolves host-relative .app icon URLs before rendering them inside the plugin iframe", () => {
+    const source = readSource("src/main.tsx");
+    const fileIconSource = source.slice(
+      source.indexOf("function FileIcon("),
+      source.indexOf("function decodeReadResult("),
+    );
+
+    expect(source).toContain("APPKITS_HOST_ORIGIN");
+    expect(source).toContain("resolveHostIconUrl");
+    expect(fileIconSource).toContain("resolveHostIconUrl(");
   });
 
   it("follows the host theme while preserving the earlier light surface", () => {

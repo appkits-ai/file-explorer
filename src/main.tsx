@@ -618,8 +618,8 @@ function App() {
   const visibleEntries = React.useMemo(() => {
     return query.trim()
       ? searchEntries(visibleWorkspaceEntries, currentPath, query)
-      : childEntries(visibleWorkspaceEntries, currentPath);
-  }, [currentPath, query, visibleWorkspaceEntries]);
+      : childEntries(entries, currentPath, { showHiddenFiles });
+  }, [currentPath, entries, query, showHiddenFiles, visibleWorkspaceEntries]);
   const visibleEntriesWithPending = React.useMemo(() => {
     if (!pendingCreate || pendingCreate.directory !== currentPath || query.trim()) {
       return visibleEntries;
@@ -630,7 +630,10 @@ function App() {
     ];
   }, [currentPath, pendingCreate, query, renameValue, visibleEntries]);
   const tree = React.useMemo(() => buildDirectoryTree(visibleWorkspaceEntries), [visibleWorkspaceEntries]);
-  const entryMap = React.useMemo(() => new Map(visibleWorkspaceEntries.map((entry) => [entry.path, entry])), [visibleWorkspaceEntries]);
+  const entryMap = React.useMemo(
+    () => new Map(entries.map((entry) => [entry.path, entry])),
+    [entries],
+  );
   const selectedEntrySet = React.useMemo(() => new Set(selectedPaths), [selectedPaths]);
   const selectedEntries = React.useMemo(
     () => selectedPaths.map((path) => entryMap.get(path)).filter((entry): entry is ExplorerEntry => Boolean(entry)),

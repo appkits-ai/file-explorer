@@ -204,8 +204,13 @@ export function childEntries(
   options: VisibilityOptions = {},
 ): ExplorerEntry[] {
   const root = normalizePath(directory);
-  return entriesForVisibility(entries, options)
+  return entries
     .filter((entry) => parentPath(entry.path) === root)
+    .filter(
+      (entry) =>
+        options.showHiddenFiles === true ||
+        !isHiddenPathSegment(filenameFromPath(entry.path)),
+    )
     .sort((a, b) => {
       if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
       return a.name.localeCompare(b.name);

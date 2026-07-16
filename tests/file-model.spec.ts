@@ -122,6 +122,34 @@ describe("file explorer model", () => {
     ).toEqual([".appkits", "project", ".env", "readme.md"]);
   });
 
+  it("shows ordinary children after navigating into a hidden directory", () => {
+    const hiddenDirectory =
+      "/home/agent/Apps/opendesign@0.2.14/srv/.opendesign";
+    const hiddenDirectoryEntries: ExplorerEntry[] = [
+      {
+        path: `${hiddenDirectory}/container-write.txt`,
+        name: "container-write.txt",
+        kind: "file",
+      },
+      {
+        path: `${hiddenDirectory}/.internal.json`,
+        name: ".internal.json",
+        kind: "file",
+      },
+    ];
+
+    expect(
+      childEntries(hiddenDirectoryEntries, hiddenDirectory).map(
+        (entry) => entry.name,
+      ),
+    ).toEqual(["container-write.txt"]);
+    expect(
+      childEntries(hiddenDirectoryEntries, hiddenDirectory, {
+        showHiddenFiles: true,
+      }).map((entry) => entry.name),
+    ).toEqual([".internal.json", "container-write.txt"]);
+  });
+
   it("filters search across the workspace", () => {
     expect(searchEntries(entries, HOME_ROOT, "read").map((entry) => entry.name)).toEqual([
       "readme.md",

@@ -270,20 +270,24 @@ describe("file explorer model", () => {
     expect(selectedPathFromLaunchParams(params)).toBe("/home/agent/project/a.txt");
   });
 
-  it("maps visible breadcrumb paths back to desktop paths", () => {
-    expect(visiblePath("/home/agent/project/src")).toBe("home/project/src");
+  it("displays canonical home paths while accepting legacy aliases", () => {
+    expect(visiblePath(HOME_ROOT)).toBe("/home/agent");
+    expect(visiblePath("/home/agent/project/src")).toBe(
+      "/home/agent/project/src",
+    );
     expect(pathFromVisiblePath("home/project/src")).toBe(
       "/home/agent/project/src",
     );
     expect(pathFromVisiblePath("Home/project/src")).toBe(
       "/home/agent/project/src",
     );
+    expect(pathFromVisiblePath("/home/agent/project/src")).toBe(
+      "/home/agent/project/src",
+    );
     expect(pathFromVisiblePath("/home")).toBe(HOME_ROOT);
-    expect(breadcrumbSegments("/home/agent/project/src").map((part) => part.label)).toEqual([
-      "home",
-      "project",
-      "src",
-    ]);
+    expect(
+      breadcrumbSegments("/home/agent/project/src").map((part) => part.label),
+    ).toEqual(["/home/agent", "project", "src"]);
   });
 
   it("decides whether file change events affect the current directory", () => {

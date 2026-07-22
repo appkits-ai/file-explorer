@@ -4,7 +4,7 @@ import {
 } from "@appkits-ai/sdk/desktop-icons";
 
 export const HOME_ROOT = "/home/agent";
-export const HOME_DISPLAY_NAME = "home";
+export const HOME_DISPLAY_NAME = HOME_ROOT;
 
 export interface ExplorerEntry {
   path: string;

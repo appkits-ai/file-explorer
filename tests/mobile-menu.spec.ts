@@ -48,6 +48,24 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).not.toContain("setStatus(`Opened ${entry.name}`)");
   });
 
+  it("renders breadcrumb model labels and normalizes virtual navigation", () => {
+    const source = readSource("src/main.tsx");
+    const breadcrumbSource = source.slice(
+      source.indexOf('<nav className="breadcrumb"'),
+      source.indexOf('<section className="workspace">'),
+    );
+    const navigateSource = source.slice(
+      source.indexOf("function navigate("),
+      source.indexOf("function setSingleSelection("),
+    );
+
+    expect(breadcrumbSource).toContain("{segment.label}");
+    expect(breadcrumbSource).not.toContain("segment.path === HOME_ROOT ?");
+    expect(navigateSource).toContain("const next = normalizePath(path);");
+    expect(navigateSource).toContain("setCurrentPath(next);");
+    expect(navigateSource).not.toContain("setCurrentPath(path);");
+  });
+
   it("opens context menus without waiting for opener discovery", () => {
     const source = readSource("src/main.tsx");
     const openContextMenuStart = source.indexOf("function openContextMenu(");

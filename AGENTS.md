@@ -25,6 +25,13 @@ This repository is the APPKits File Explorer plugin. Treat this file as the root
 - Touched files over 800 effective lines are legacy-risk. Before changing one, inspect CodeGraph callers/impact, identify reusable helpers, and state whether the change extracts, narrows, or intentionally defers a split.
 - Touched files over 2,000 effective lines are high-risk. Do not add unrelated behavior there without a split plan.
 
+## Path Presentation And Authority
+
+- Breadcrumb chrome presents the selected profile root as separate `home > agent` segments.
+- `/home` is a virtual presentation parent only. Clicking it must normalize back to `/home/agent` before directory state or SDK calls change, and it must never expose sibling home directories.
+- Launch params, path editing, listing, reading, writing, moving, deleting, and transfer operations remain rooted at canonical `/home/agent/**` paths.
+- Canonical `/home/agent/**` input and supported `home/**` aliases remain accepted; parsing `home/agent/**` must not duplicate the `agent` segment.
+
 ## Verification
 
 Run the smallest relevant set, and run the full set before committing harness or shared behavior changes:

@@ -11,6 +11,7 @@ import {
   fileTypeLabel,
   isTextPreviewable,
   mergeDirectoryListing,
+  normalizePath,
   pendingCreateEntry,
   pendingCreatePath,
   pendingCreateTarget,
@@ -270,7 +271,7 @@ describe("file explorer model", () => {
     expect(selectedPathFromLaunchParams(params)).toBe("/home/agent/project/a.txt");
   });
 
-  it("displays canonical home paths while accepting legacy aliases", () => {
+  it("presents home and agent separately while accepting canonical and alias paths", () => {
     expect(visiblePath(HOME_ROOT)).toBe("/home/agent");
     expect(visiblePath("/home/agent/project/src")).toBe(
       "/home/agent/project/src",
@@ -281,13 +282,36 @@ describe("file explorer model", () => {
     expect(pathFromVisiblePath("Home/project/src")).toBe(
       "/home/agent/project/src",
     );
+    expect(pathFromVisiblePath("home/agent")).toBe(HOME_ROOT);
+    expect(pathFromVisiblePath("home/agent/project/src")).toBe(
+      "/home/agent/project/src",
+    );
+    expect(pathFromVisiblePath("Home/Agent/project/src")).toBe(
+      "/home/agent/project/src",
+    );
     expect(pathFromVisiblePath("/home/agent/project/src")).toBe(
       "/home/agent/project/src",
     );
     expect(pathFromVisiblePath("/home")).toBe(HOME_ROOT);
-    expect(
-      breadcrumbSegments("/home/agent/project/src").map((part) => part.label),
-    ).toEqual(["/home/agent", "project", "src"]);
+    expect(pathFromVisiblePath("/home/other/secret.txt")).toBe(
+      "/home/agent/other/secret.txt",
+    );
+    expect(normalizePath("/home/agent-sibling/secret.txt")).toBe(
+      "/home/agent/home/agent-sibling/secret.txt",
+    );
+    const segments = breadcrumbSegments("/home/agent/project/src");
+    expect(segments).toEqual([
+      { label: "home", path: "/home" },
+      { label: "agent", path: HOME_ROOT },
+      { label: "project", path: "/home/agent/project" },
+      { label: "src", path: "/home/agent/project/src" },
+    ]);
+    expect(segments.map((segment) => normalizePath(segment.path))).toEqual([
+      HOME_ROOT,
+      HOME_ROOT,
+      "/home/agent/project",
+      "/home/agent/project/src",
+    ]);
   });
 
   it("decides whether file change events affect the current directory", () => {

@@ -1735,7 +1735,7 @@ function App() {
             <React.Fragment key={segment.path}>
               {index > 0 ? <ChevronRight size={14} /> : null}
               <button onClick={() => navigate(segment.path)}>
-                {segment.path === HOME_ROOT ? t(locale, "path.home") : segment.label}
+                {segment.label}
               </button>
             </React.Fragment>
           ))

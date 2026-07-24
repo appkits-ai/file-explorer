@@ -130,11 +130,15 @@ export function joinPath(directory: string, filename: string): string {
   return normalizePath(`${normalizePath(directory)}/${filename}`);
 }
 
+function isHomeAuthorityPath(path: string): boolean {
+  return path === HOME_ROOT || path.startsWith(`${HOME_ROOT}/`);
+}
+
 export function normalizePath(path: string): string {
   const normalized = (path || HOME_ROOT).replace(/\\/g, "/").replace(/\/+/g, "/");
   const trimmed = normalized.replace(/\/+$/, "") || HOME_ROOT;
   if (trimmed === "/" || trimmed === "/home") return HOME_ROOT;
-  return trimmed.startsWith(HOME_ROOT)
+  return isHomeAuthorityPath(trimmed)
     ? trimmed
     : `${HOME_ROOT}/${trimmed.replace(/^\/+/, "")}`;
 }
@@ -146,13 +150,19 @@ export function visiblePath(path: string): string {
 }
 
 export function pathFromVisiblePath(path: string): string {
-  const trimmed = path.trim();
+  const trimmed = path.trim().replace(/\\/g, "/");
   const normalized = trimmed.toLowerCase();
-  if (!trimmed || normalized === "home" || trimmed === "/home") return HOME_ROOT;
-  if (normalized.startsWith("home/")) {
-    return normalizePath(`${HOME_ROOT}/${trimmed.slice(5)}`);
+  if (!trimmed || normalized === "home" || normalized === "/home") {
+    return HOME_ROOT;
   }
-  if (trimmed.startsWith("/home/") && !trimmed.startsWith(HOME_ROOT)) {
+  if (normalized === "home/agent") return HOME_ROOT;
+  if (normalized.startsWith("home/agent/")) {
+    return normalizePath(`${HOME_ROOT}/${trimmed.slice("home/agent/".length)}`);
+  }
+  if (normalized.startsWith("home/")) {
+    return normalizePath(`${HOME_ROOT}/${trimmed.slice("home/".length)}`);
+  }
+  if (normalized.startsWith("/home/") && !isHomeAuthorityPath(normalized)) {
     return normalizePath(`${HOME_ROOT}/${trimmed.slice("/home/".length)}`);
   }
   return normalizePath(trimmed);
@@ -160,9 +170,13 @@ export function pathFromVisiblePath(path: string): string {
 
 export function breadcrumbSegments(path: string): BreadcrumbSegment[] {
   const normalized = normalizePath(path);
-  const relative = normalized === HOME_ROOT ? [] : normalized.slice(HOME_ROOT.length + 1).split("/");
+  const relative =
+    normalized === HOME_ROOT
+      ? []
+      : normalized.slice(HOME_ROOT.length + 1).split("/");
   return [
-    { label: HOME_DISPLAY_NAME, path: HOME_ROOT },
+    { label: "home", path: "/home" },
+    { label: "agent", path: HOME_ROOT },
     ...relative.map((part, index) => ({
       label: part,
       path: `${HOME_ROOT}/${relative.slice(0, index + 1).join("/")}`,

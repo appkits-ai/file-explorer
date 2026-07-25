@@ -3,6 +3,7 @@ import {
   HOME_ROOT,
   breadcrumbSegments,
   buildDirectoryTree,
+  buildLocationTree,
   childEntries,
   contextMenuItemIdFromSelection,
   createTargetPath,
@@ -77,6 +78,46 @@ describe("file explorer model", () => {
   it("builds a directory tree from file paths", () => {
     const tree = buildDirectoryTree(entries);
     expect(tree.children.map((child) => child.name)).toEqual(["project"]);
+  });
+
+  it("models LOCATIONS as visual home then agent over canonical authority paths", () => {
+    const locations = buildLocationTree(entries);
+    const agent = locations.children[0];
+
+    expect(locations).toMatchObject({
+      label: "home",
+      authorityPath: HOME_ROOT,
+    });
+    expect(locations.activePath).toBeUndefined();
+    expect(locations.children).toHaveLength(1);
+    expect(agent).toMatchObject({
+      label: "agent",
+      authorityPath: HOME_ROOT,
+      activePath: HOME_ROOT,
+    });
+    if (!agent) throw new Error("expected the visual agent location");
+    expect(
+      agent.children.map((child) => ({
+        label: child.label,
+        authorityPath: child.authorityPath,
+      })),
+    ).toEqual([
+      {
+        label: "project",
+        authorityPath: "/home/agent/project",
+      },
+    ]);
+
+    const nodes = [locations, agent, ...agent.children];
+    expect(
+      nodes.every(
+        (node) =>
+          node.authorityPath === HOME_ROOT ||
+          node.authorityPath.startsWith(`${HOME_ROOT}/`),
+      ),
+    ).toBe(true);
+    expect(nodes.some((node) => node.authorityPath === "/home")).toBe(false);
+    expect(agent.children.some((child) => child.label === "agent")).toBe(false);
   });
 
   it("hides dot files and dot-folder descendants until show hidden is enabled", () => {

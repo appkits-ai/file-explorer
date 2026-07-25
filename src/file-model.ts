@@ -64,6 +64,14 @@ export interface TreeNode {
   children: TreeNode[];
 }
 
+export interface LocationTreeNode {
+  id: string;
+  label: string;
+  authorityPath: string;
+  activePath?: string;
+  children: LocationTreeNode[];
+}
+
 export interface BreadcrumbSegment {
   label: string;
   path: string;
@@ -289,6 +297,41 @@ export function buildDirectoryTree(
     node.children.sort((a, b) => a.name.localeCompare(b.name));
   }
   return nodes.get(HOME_ROOT) ?? { path: HOME_ROOT, name: HOME_DISPLAY_NAME, children: [] };
+}
+
+function locationNodeFromDirectory(node: TreeNode): LocationTreeNode {
+  return {
+    id: `authority:${node.path}`,
+    label: node.name,
+    authorityPath: node.path,
+    activePath: node.path,
+    children: node.children.map(locationNodeFromDirectory),
+  };
+}
+
+/**
+ * Builds the LOCATIONS presentation hierarchy without exposing its virtual home
+ * parent as an SDK path. Every actionable node remains rooted at HOME_ROOT.
+ */
+export function buildLocationTree(
+  entries: ExplorerEntry[],
+  options: VisibilityOptions = {},
+): LocationTreeNode {
+  const authorityRoot = buildDirectoryTree(entries, options);
+  return {
+    id: "presentation:home",
+    label: "home",
+    authorityPath: HOME_ROOT,
+    children: [
+      {
+        id: "presentation:agent",
+        label: "agent",
+        authorityPath: HOME_ROOT,
+        activePath: HOME_ROOT,
+        children: authorityRoot.children.map(locationNodeFromDirectory),
+      },
+    ],
+  };
 }
 
 export function searchEntries(

@@ -66,6 +66,25 @@ describe("File Explorer mobile menu contracts", () => {
     expect(navigateSource).not.toContain("setCurrentPath(path);");
   });
 
+  it("renders LOCATIONS labels separately while actions use canonical authority paths", () => {
+    const source = readSource("src/main.tsx");
+    const treeSource = source.slice(
+      source.indexOf("function Tree("),
+      source.indexOf("function ToolbarButton("),
+    );
+    const compactTreeSource = compact(treeSource);
+
+    expect(source).toContain("buildLocationTree(visibleWorkspaceEntries)");
+    expect(compactTreeSource).toContain("data-active={node.activePath === currentPath}");
+    expect(compactTreeSource).toContain("onOpen(node.authorityPath)");
+    expect(compactTreeSource).toContain("openTreeContextMenu(event, node.authorityPath)");
+    expect(compactTreeSource).toContain("moveDroppedEntries(event, node.authorityPath)");
+    expect(compactTreeSource).toContain("{node.label}");
+    expect(compactTreeSource).toContain("key={child.id}");
+    expect(compactTreeSource).not.toContain('t(locale, "path.home")');
+    expect(compactTreeSource).not.toContain("onOpen(node.path)");
+  });
+
   it("opens context menus without waiting for opener discovery", () => {
     const source = readSource("src/main.tsx");
     const openContextMenuStart = source.indexOf("function openContextMenu(");

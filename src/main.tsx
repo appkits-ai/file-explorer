@@ -23,7 +23,7 @@ import { Button } from "@appkits-ai/ui";
 import {
   HOME_ROOT,
   breadcrumbSegments,
-  buildDirectoryTree,
+  buildLocationTree,
   childEntries,
   contextMenuItemIdFromSelection,
   desktopFileIconName,
@@ -53,10 +53,10 @@ import {
   visiblePath,
   type ExplorerEntry,
   type FileTypeKind,
+  type LocationTreeNode,
   type PendingCreateKind,
   type SelectionRect,
   type SelectionState,
-  type TreeNode,
 } from "./file-model";
 import { pluralSuffix, t, type TranslationKey } from "./i18n";
 import "./styles.css";
@@ -323,12 +323,12 @@ function scheduleFileIconBodyRead(
 }
 
 function treeNodeIconEntry(
-  node: TreeNode,
+  node: LocationTreeNode,
   entryMap: ReadonlyMap<string, ExplorerEntry>,
 ): ExplorerEntry {
-  return entryMap.get(node.path) ?? {
-    path: node.path,
-    name: node.path === HOME_ROOT ? "home" : node.name,
+  return entryMap.get(node.authorityPath) ?? {
+    path: node.authorityPath,
+    name: node.label,
     kind: "directory",
   };
 }
@@ -629,7 +629,10 @@ function App() {
       ...visibleEntries,
     ];
   }, [currentPath, pendingCreate, query, renameValue, visibleEntries]);
-  const tree = React.useMemo(() => buildDirectoryTree(visibleWorkspaceEntries), [visibleWorkspaceEntries]);
+  const tree = React.useMemo(
+    () => buildLocationTree(visibleWorkspaceEntries),
+    [visibleWorkspaceEntries],
+  );
   const entryMap = React.useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry])),
     [entries],
@@ -1748,7 +1751,6 @@ function App() {
           <Tree
             node={tree}
             currentPath={currentPath}
-            locale={locale}
             onOpen={navigate}
             openTreeContextMenu={openTreeContextMenu}
             moveDroppedEntries={moveDroppedEntries}
@@ -2017,15 +2019,13 @@ function App() {
 function Tree({
   node,
   currentPath,
-  locale,
   onOpen,
   openTreeContextMenu,
   moveDroppedEntries,
   entryMap,
 }: {
-  node: TreeNode;
+  node: LocationTreeNode;
   currentPath: string;
-  locale: string;
   onOpen: (path: string) => void;
   openTreeContextMenu: (event: React.MouseEvent<HTMLElement>, targetDirectory: string) => void;
   moveDroppedEntries: (
@@ -2037,9 +2037,9 @@ function Tree({
   return (
     <div className="tree-node">
       <button
-        data-active={node.path === currentPath}
-        onClick={() => onOpen(node.path)}
-        onContextMenu={(event) => openTreeContextMenu(event, node.path)}
+        data-active={node.activePath === currentPath}
+        onClick={() => onOpen(node.authorityPath)}
+        onContextMenu={(event) => openTreeContextMenu(event, node.authorityPath)}
         onDragOver={(event) => {
           const types = Array.from(event.dataTransfer.types || []);
           if (
@@ -2052,20 +2052,19 @@ function Tree({
           event.dataTransfer.dropEffect = "move";
         }}
         onDrop={(event) => {
-          void moveDroppedEntries(event, node.path);
+          void moveDroppedEntries(event, node.authorityPath);
         }}
       >
         <FileIcon entry={treeNodeIconEntry(node, entryMap)} />
-        <span>{node.path === HOME_ROOT ? t(locale, "path.home") : node.name}</span>
+        <span>{node.label}</span>
       </button>
       {node.children.length > 0 ? (
         <div className="tree-children">
           {node.children.map((child) => (
             <Tree
-              key={child.path}
+              key={child.id}
               node={child}
               currentPath={currentPath}
-              locale={locale}
               onOpen={onOpen}
               openTreeContextMenu={openTreeContextMenu}
               moveDroppedEntries={moveDroppedEntries}

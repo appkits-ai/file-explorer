@@ -1,0 +1,25 @@
+{
+  "workspace_id": "appkits",
+  "host_path": "/home/agent/workspace/appkits",
+  "members": [
+    {
+      "repo": "appkits-ai/core",
+      "dir": "core",
+      "role": "sdk-ui-host-contracts",
+      "base": "main"
+    },
+    {
+      "repo": "appkits-ai/file-explorer",
+      "dir": "file-explorer",
+      "role": "file-manager-plugin",
+      "base": "main"
+    },
+    {
+      "repo": "appkits-ai/monaco-vscode-api",
+      "dir": "monaco-vscode-api",
+      "role": "vscode-editor-plugin",
+      "base": "main",
+      "plugin_path": "appkits-editor"
+    }
+  ]
+}

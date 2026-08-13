@@ -1,20 +1,21 @@
-## Summary
+## Issues
 
-<!-- Describe the plugin outcome. -->
+Merge-blocking: a real `Fixes #N`, `Closes #N`, or `Refs owner/repo#N`. Template placeholders such as `#<n>` fail the gate.
 
-## Related issue
+- Fixes #<n> | Closes #<n> | Refs owner/repo#<n>:
+- Living development Issue opened before this PR. Sibling PRs use `Refs appkits-ai/core#N`. Do not span BlockReq.
 
-<!-- Dominant PR: Fixes #N or Closes #N when the Issue lives in this repository. Sibling PRs: Related: owner/repo#N. Open monaco Issues on core or file-explorer; do not span BlockReq. -->
+## Outcome
 
-## Scope
-
-- [ ] File operations still go through `@appkits-ai/sdk/client`.
-- [ ] `CORE_REF` / SDK bumps wait until `appkits-ai/core` is merged and the SHA is pinnable.
-- [ ] No SpecKit tree, goal lock, or unpublished core API treated as released.
+- File operations still go through `@appkits-ai/sdk/client`.
+- `CORE_REF` / SDK bumps wait until `appkits-ai/core` is merged and the SHA is pinnable.
 
 ## Verification
 
-<!-- Record commands and current-head results. -->
+Merge-blocking.
+
+- Head SHA:
+- Commands and results:
 
 ## Final state
 

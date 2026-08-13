@@ -1,0 +1,4 @@
+interface:
+  display_name: "Virgin Principle"
+  short_description: "Write documented code as clean first-draft final form."
+  default_prompt: "Use $virgin-principle to rewrite this change into one documented clean final form without patch stacks or residue."

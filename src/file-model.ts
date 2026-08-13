@@ -269,6 +269,39 @@ export function mergeDirectoryListing(
   );
 }
 
+/** Builds a local-first folder row shown before Computer confirms the mutation. */
+export function localPendingEntry(
+  path: string,
+  kind: "file" | "directory",
+  name: string,
+  contentType?: string,
+): ExplorerEntry {
+  return {
+    path: normalizePath(path),
+    name,
+    kind,
+    size: 0,
+    local: true,
+    temporary: true,
+    ...(contentType ? { contentType } : {}),
+  };
+}
+
+/** Inserts one child into a directory listing without dropping siblings. */
+export function upsertDirectoryChild(
+  entries: ExplorerEntry[],
+  directory: string,
+  entry: ExplorerEntry,
+): ExplorerEntry[] {
+  const root = normalizePath(directory);
+  const next = { ...entry, path: normalizePath(entry.path) };
+  const siblings = entries.filter((item) => parentPath(item.path) === root);
+  return mergeDirectoryListing(entries, root, [
+    ...siblings.filter((item) => item.path !== next.path),
+    next,
+  ]);
+}
+
 export function buildDirectoryTree(
   entries: ExplorerEntry[],
   options: VisibilityOptions = {},

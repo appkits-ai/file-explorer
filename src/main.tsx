@@ -34,6 +34,7 @@ import {
   isTextPreviewable,
   isTextInputTarget,
   joinPath,
+  localPendingEntry,
   mergeDirectoryListing,
   normalizePath,
   parentPath,
@@ -49,6 +50,7 @@ import {
   selectedPathFromLaunchParams,
   shouldRefreshDirectoryForFilesChanged,
   uniquePath,
+  upsertDirectoryChild,
   uploadTargets,
   visiblePath,
   type ExplorerEntry,
@@ -1231,25 +1233,42 @@ function App() {
       if (pendingCreateCommitRef.current) return;
       pendingCreateCommitRef.current = true;
       setRenamingPath(null);
-      setPendingCreate(null);
-      setSingleSelection(null);
       try {
-        if (!commit) return;
+        if (!commit) {
+          setPendingCreate(null);
+          setSingleSelection(null);
+          return;
+        }
         const target = pendingCreateTarget(
           entriesRef.current,
           pending.directory,
           pending.initialName,
           renameValue,
         );
-        if (!target) return;
-        if (target.exists) {
-          notify(t(locale, "notify.nameExists"), "error");
+        if (!target) {
+          setPendingCreate(null);
           return;
         }
+        if (target.exists) {
+          notify(t(locale, "notify.nameExists"), "error");
+          setPendingCreate(null);
+          return;
+        }
+        const extension = pending.extension || ".txt";
+        const optimistic = localPendingEntry(
+          target.path,
+          pending.kind,
+          target.name,
+          pending.kind === "file" ? TEXT_FILE_TYPE[extension] : undefined,
+        );
+        setEntries((current) =>
+          upsertDirectoryChild(current, pending.directory, optimistic),
+        );
+        setPendingCreate(null);
+        setSingleSelection(target.path);
         if (pending.kind === "directory") {
           await appkits.files.mkdir(target.path);
         } else {
-          const extension = pending.extension || ".txt";
           await appkits.files.write({
             path: target.path,
             body: TEXT_FILE_BODY[extension],
@@ -1259,6 +1278,9 @@ function App() {
         await refresh();
         setSingleSelection(target.path);
         setStatus(pending.kind === "directory" ? t(locale, "status.folderCreated") : t(locale, "status.fileCreated"));
+      } catch {
+        notify(t(locale, "notify.createFailed"), "error");
+        setStatus(t(locale, "status.createFailed"));
       } finally {
         pendingCreateCommitRef.current = false;
       }
@@ -1312,24 +1334,45 @@ function App() {
 
   async function pasteInto(targetDirectory: string) {
     if (!clipboard) return;
+    let working = entriesRef.current;
+    const planned: Array<{ entry: ExplorerEntry; target: string }> = [];
     for (const entry of clipboard.entries) {
-      const target = uniquePath(entriesRef.current, targetDirectory, entry.name);
-      if (entry.kind === "directory") {
-        await copyDirectory(entry.path, target);
-      } else {
-        const file = await appkits.files.read(entry.path);
-        await appkits.files.write({
-          path: target,
-          body: file.body,
-          bodyBase64: file.bodyBase64,
-          contentType: file.contentType || entry.contentType,
-        });
-      }
-      if (clipboard.mode === "cut") await appkits.files.delete(entry.path);
+      const target = uniquePath(working, targetDirectory, entry.name);
+      working = upsertDirectoryChild(
+        working,
+        targetDirectory,
+        localPendingEntry(
+          target,
+          entry.kind,
+          filenameFromPath(target),
+          entry.contentType,
+        ),
+      );
+      planned.push({ entry, target });
     }
-    if (clipboard.mode === "cut") setClipboard(null);
-    await refresh();
-    setStatus(t(locale, "status.pasteComplete"));
+    setEntries(working);
+    try {
+      for (const { entry, target } of planned) {
+        if (entry.kind === "directory") {
+          await copyDirectory(entry.path, target);
+        } else {
+          const file = await appkits.files.read(entry.path);
+          await appkits.files.write({
+            path: target,
+            body: file.body,
+            bodyBase64: file.bodyBase64,
+            contentType: file.contentType || entry.contentType,
+          });
+        }
+        if (clipboard.mode === "cut") await appkits.files.delete(entry.path);
+      }
+      if (clipboard.mode === "cut") setClipboard(null);
+      await refresh();
+      setStatus(t(locale, "status.pasteComplete"));
+    } catch {
+      notify(t(locale, "notify.pasteFailed"), "error");
+      setStatus(t(locale, "status.pasteFailed"));
+    }
   }
 
   function fileTransferEntries(items: ExplorerEntry[]): appkits.AppKitsFileTransferEntry[] {

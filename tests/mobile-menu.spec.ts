@@ -185,6 +185,29 @@ describe("File Explorer mobile menu contracts", () => {
     expect(successPath).not.toContain("status.refreshFailed");
   });
 
+  it("paints local folder rows before Computer create and paste confirm", () => {
+    const source = readSource("src/main.tsx");
+    const finishRename = source.slice(
+      source.indexOf("async function finishRename"),
+      source.indexOf("async function deleteEntries"),
+    );
+    const pasteInto = source.slice(
+      source.indexOf("async function pasteInto"),
+      source.indexOf("function fileTransferEntries"),
+    );
+
+    expect(finishRename).toContain(
+      "upsertDirectoryChild(current, pending.directory, optimistic)",
+    );
+    expect(finishRename.indexOf("upsertDirectoryChild")).toBeLessThan(
+      finishRename.indexOf("await appkits.files.mkdir"),
+    );
+    expect(pasteInto).toContain("setEntries(working)");
+    expect(pasteInto.indexOf("setEntries(working)")).toBeLessThan(
+      pasteInto.indexOf("await copyDirectory"),
+    );
+  });
+
   it("uses localized UI strings and shared desktop file icon ids", () => {
     const source = readSource("src/main.tsx");
     const styles = readSource("src/styles.css");

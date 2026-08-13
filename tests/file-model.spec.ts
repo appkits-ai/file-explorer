@@ -11,6 +11,7 @@ import {
   filterVisibleEntries,
   fileTypeLabel,
   isTextPreviewable,
+  localPendingEntry,
   mergeDirectoryListing,
   normalizePath,
   pendingCreateEntry,
@@ -24,6 +25,7 @@ import {
   selectedPathFromLaunchParams,
   shouldRefreshDirectoryForFilesChanged,
   uniquePath,
+  upsertDirectoryChild,
   uploadTargets,
   visiblePath,
   type ExplorerEntry,
@@ -58,6 +60,32 @@ describe("file explorer model", () => {
     expect(
       childEntries(merged, "/home/agent/project").map((entry) => entry.name),
     ).toEqual(["b.txt"]);
+  });
+
+  it("inserts a local-first child without dropping siblings", () => {
+    const next = upsertDirectoryChild(
+      entries,
+      HOME_ROOT,
+      localPendingEntry("/home/agent/notes.txt", "file", "notes.txt", "text/plain"),
+    );
+
+    expect(childEntries(next, HOME_ROOT).map((entry) => entry.name)).toEqual([
+      "project",
+      "notes.txt",
+      "readme.md",
+    ]);
+    expect(next).toContainEqual({
+      path: "/home/agent/notes.txt",
+      name: "notes.txt",
+      kind: "file",
+      size: 0,
+      local: true,
+      temporary: true,
+      contentType: "text/plain",
+    });
+    expect(childEntries(next, "/home/agent/project").map((entry) => entry.name)).toEqual([
+      "a.txt",
+    ]);
   });
 
   it("keeps directly loaded empty folders navigable", () => {

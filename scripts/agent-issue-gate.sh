@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Freshness gate for composed-workspace Issue delivery.
+# 组合工作区 Issue 交付的新鲜度门：列出并处理已有 open PR 后再开新 PR。
+# Freshness gate for composed-workspace Issue delivery: process existing open PRs before opening another.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -41,6 +42,11 @@ print(f"agent-issue-gate: workspace={workspace.get('workspace_id')} repo={curren
 if int(behind) > 0:
     print(f"agent-issue-gate: warning: HEAD is {behind} commit(s) behind origin/{base}; rebase or merge before expanding scope", file=sys.stderr)
 
+current_branch = subprocess.check_output(
+    ["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+    text=True,
+).strip()
+
 gh = subprocess.run(
     ["gh", "pr", "list", "--repo", current_repo, "--state", "open", "--json", "number,title,headRefName,isDraft,url"],
     capture_output=True,
@@ -52,9 +58,23 @@ if gh.returncode != 0:
     sys.exit(0)
 
 prs = json.loads(gh.stdout or "[]")
-print(f"agent-issue-gate: open_prs={len(prs)}")
+print(f"agent-issue-gate: open_prs={len(prs)} current_branch={current_branch}")
 for pr in prs:
     print(f"  #{pr.get('number')} {pr.get('headRefName')} draft={pr.get('isDraft')} {pr.get('url')}")
-if len(prs) > 1:
-    print("agent-issue-gate: more than one open PR in this member; do not open another. Unmerged PRs may only receive CI fixes or review replies.", file=sys.stderr)
+
+if not prs:
+    sys.exit(0)
+
+heads = [pr.get("headRefName") for pr in prs]
+if len(prs) == 1 and current_branch in heads:
+    print(f"agent-issue-gate: continuing open PR #{prs[0].get('number')} on {current_branch}")
+    sys.exit(0)
+
+print(
+    "agent-issue-gate: process existing open PRs before opening another: "
+    "merge if complete, close if already done/stale/superseded, rebase if behind. "
+    "Do not stop the new workstream solely because another PR is open.",
+    file=sys.stderr,
+)
+sys.exit(1)
 PY

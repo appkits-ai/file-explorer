@@ -462,7 +462,7 @@ export function pendingCreateTarget(
   const targetName =
     trimmedName === initialName
       ? filenameFromPath(uniquePath(entries, directory, initialName))
-      : sanitizeFilename(trimmedName);
+      : trimmedName;
   const path = createTargetPath(directory, targetName);
   if (!path) return null;
   const exists = entries.some(

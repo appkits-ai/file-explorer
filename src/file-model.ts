@@ -381,20 +381,36 @@ export function searchEntries(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Strips control characters and path separators, then replaces whitespace with `_`.
+ */
+export function sanitizeFilename(filename: string): string {
+  return filename
+    .replace(/[\u0000-\u001f]/g, "")
+    .replace(/[\\/]/g, "-")
+    .trim()
+    .replace(/\s+/g, "_")
+    .slice(0, 180);
+}
+
+/**
+ * Returns a directory-unique path whose filename has no whitespace.
+ */
 export function uniquePath(
   entries: ExplorerEntry[],
   directory: string,
   filename: string,
 ): string {
-  const base = filename.replace(/\.[^.]+$/, "") || "Untitled";
-  const extension = filename.includes(".")
-    ? filename.slice(filename.lastIndexOf("."))
+  const clean = sanitizeFilename(filename) || "Untitled";
+  const base = clean.replace(/\.[^.]+$/, "") || "Untitled";
+  const extension = clean.includes(".")
+    ? clean.slice(clean.lastIndexOf("."))
     : "";
   const existing = new Set(entries.map((entry) => entry.path.toLowerCase()));
-  let candidate = `${normalizePath(directory)}/${filename}`;
+  let candidate = `${normalizePath(directory)}/${clean}`;
   let index = 2;
   while (existing.has(candidate.toLowerCase())) {
-    candidate = `${normalizePath(directory)}/${base} ${index}${extension}`;
+    candidate = `${normalizePath(directory)}/${base}_${index}${extension}`;
     index += 1;
   }
   return candidate;
@@ -421,6 +437,9 @@ export function pendingCreateEntry(
   };
 }
 
+/**
+ * Builds a create/rename target path after replacing whitespace with underscores.
+ */
 export function createTargetPath(
   directory: string,
   name: string,
@@ -428,7 +447,9 @@ export function createTargetPath(
   const trimmed = name.trim();
   if (!trimmed || trimmed.includes("/") || trimmed.includes("\\")) return null;
   if (trimmed === "." || trimmed === "..") return null;
-  return joinPath(directory, trimmed);
+  const clean = sanitizeFilename(trimmed);
+  if (!clean || clean === "." || clean === "..") return null;
+  return joinPath(directory, clean);
 }
 
 export function pendingCreateTarget(
@@ -466,8 +487,9 @@ function copySafePath(
   let attempt = 0;
   for (;;) {
     const suffix =
-      attempt === 0 ? "" : ` copy${attempt === 1 ? "" : ` ${attempt}`}`;
-    const candidate = `${normalizedDirectory}/${stem}${suffix}${extension}`;
+      attempt === 0 ? "" : `_copy${attempt === 1 ? "" : `_${attempt}`}`;
+    const cleanStem = sanitizeFilename(stem) || "Untitled";
+    const candidate = `${normalizedDirectory}/${cleanStem}${suffix}${extension}`;
     if (!existing.has(candidate.toLowerCase())) return candidate;
     attempt += 1;
   }
@@ -524,14 +546,6 @@ export function uploadTargets(
     allocated.push({ path: candidate, name: filename, kind: "file" });
     return { sourceName: filename, path: candidate, conflict };
   });
-}
-
-export function sanitizeFilename(filename: string): string {
-  return filename
-    .replace(/[\u0000-\u001f]/g, "")
-    .replace(/[\\/]/g, "-")
-    .trim()
-    .slice(0, 180);
 }
 
 export function fileTypeKind(entry: ExplorerEntry | null | undefined): FileTypeKind {

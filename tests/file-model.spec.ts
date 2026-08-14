@@ -228,7 +228,7 @@ describe("file explorer model", () => {
 
   it("creates conflict-safe target names", () => {
     expect(uniquePath(entries, HOME_ROOT, "readme.md")).toBe(
-      "/home/agent/readme 2.md",
+      "/home/agent/readme_2.md",
     );
   });
 
@@ -256,6 +256,9 @@ describe("file explorer model", () => {
     expect(createTargetPath(HOME_ROOT, "notes.txt")).toBe(
       "/home/agent/notes.txt",
     );
+    expect(createTargetPath(HOME_ROOT, "New Folder")).toBe(
+      "/home/agent/New_Folder",
+    );
     expect(createTargetPath(HOME_ROOT, "")).toBeNull();
     expect(createTargetPath(HOME_ROOT, "nested/file.txt")).toBeNull();
   });
@@ -264,8 +267,8 @@ describe("file explorer model", () => {
     const createEntries: ExplorerEntry[] = [
       { path: "/home/agent/Untitled.txt", name: "Untitled.txt", kind: "file" },
       {
-        path: "/home/agent/Untitled 2.txt",
-        name: "Untitled 2.txt",
+        path: "/home/agent/Untitled_2.txt",
+        name: "Untitled_2.txt",
         kind: "file",
       },
       { path: "/home/agent/readme.md", name: "readme.md", kind: "file" },
@@ -274,8 +277,8 @@ describe("file explorer model", () => {
     expect(
       pendingCreateTarget(createEntries, HOME_ROOT, "Untitled.txt", "Untitled.txt"),
     ).toEqual({
-      path: "/home/agent/Untitled 3.txt",
-      name: "Untitled 3.txt",
+      path: "/home/agent/Untitled_3.txt",
+      name: "Untitled_3.txt",
       exists: false,
     });
     expect(
@@ -288,6 +291,18 @@ describe("file explorer model", () => {
     expect(
       pendingCreateTarget(createEntries, HOME_ROOT, "Untitled.txt", "nested/file.txt"),
     ).toBeNull();
+    expect(
+      pendingCreateTarget(
+        createEntries,
+        HOME_ROOT,
+        "Untitled.txt",
+        "html-anything copy.app",
+      ),
+    ).toEqual({
+      path: "/home/agent/html-anything_copy.app",
+      name: "html-anything_copy.app",
+      exists: false,
+    });
   });
 
   it("plans move drops with copy-safe target names and descendant protection", () => {
@@ -316,7 +331,7 @@ describe("file explorer model", () => {
     ).toEqual([
       {
         fromPath: "/home/agent/report.md",
-        toPath: "/home/agent/Desktop/report copy.md",
+        toPath: "/home/agent/Desktop/report_copy.md",
       },
       {
         fromPath: "/home/agent/assets",
@@ -413,6 +428,9 @@ describe("file explorer model", () => {
 
   it("sanitizes unsafe file names for create, upload, and rename", () => {
     expect(sanitizeFilename(" ../bad/name.txt\0 ")).toBe("..-bad-name.txt");
+    expect(sanitizeFilename("html-anything copy.app")).toBe(
+      "html-anything_copy.app",
+    );
   });
 
   it("plans upload targets without colliding duplicate batch names", () => {
@@ -420,7 +438,7 @@ describe("file explorer model", () => {
       uploadTargets(entries, HOME_ROOT, ["readme.md", "readme.md"], false).map(
         (target) => target.path,
       ),
-    ).toEqual(["/home/agent/readme 2.md", "/home/agent/readme 3.md"]);
+    ).toEqual(["/home/agent/readme_2.md", "/home/agent/readme_3.md"]);
   });
 
   it("reports upload conflicts for overwrite confirmation", () => {

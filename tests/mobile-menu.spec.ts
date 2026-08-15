@@ -210,24 +210,18 @@ describe("File Explorer mobile menu contracts", () => {
 
   it("uses localized UI strings and shared desktop file icon ids", () => {
     const source = readSource("src/main.tsx");
+    const fileIconSource = readSource("src/file-icon.tsx");
     const styles = readSource("src/styles.css");
-    const fileIconSource = source.slice(
-      source.indexOf("function FileIcon("),
-      source.indexOf("function decodeReadResult("),
-    );
     const compactFileIconSource = compact(fileIconSource);
 
     expect(source).toContain('appkits.locale.current()');
     expect(source).toContain('t(locale, "toolbar.refresh")');
-    expect(source).toContain("desktopFileIconName(entry)");
-    expect(source).toContain("getDesktopIconAssetPath(iconName)");
-    expect(source).toContain("parseAppKitsAppFile");
+    expect(fileIconSource).toContain("desktopFileIconName(entry)");
+    expect(fileIconSource).toContain("getDesktopIconAssetPath(iconName)");
+    expect(fileIconSource).toContain("parseAppKitsAppFile");
     expect(compactFileIconSource).toContain("resolveHostIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl)");
-    expect(fileIconSource).toContain('if (type === "app")');
-    expect(compactFileIconSource.indexOf('if (type === "app")')).toBeLessThan(
-      compactFileIconSource.indexOf('<span className="file-icon"'),
-    );
-    expect(source).toContain("file-app-icon-placeholder");
+    expect(fileIconSource).toContain('if (type !== "app" || entry.temporary)');
+    expect(fileIconSource).toContain("file-app-icon-placeholder");
     expect(styles).toContain(".file-icon-asset");
     expect(styles).toContain(".file-icon-image");
     expect(styles).toContain(".file-app-icon-placeholder");
@@ -249,10 +243,7 @@ describe("File Explorer mobile menu contracts", () => {
 
   it("shares tree and file-list icons without fallback image assets", () => {
     const source = readSource("src/main.tsx");
-    const fileIconSource = source.slice(
-      source.indexOf("function FileIcon("),
-      source.indexOf("function decodeReadResult("),
-    );
+    const fileIconSource = readSource("src/file-icon.tsx");
     const treeSource = source.slice(
       source.indexOf("function Tree("),
       source.indexOf("function ToolbarButton("),
@@ -263,6 +254,8 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource).toContain("BlankFileIcon");
     expect(fileIconSource).toContain("scheduleFileIconBodyRead");
     expect(fileIconSource).toContain("setIconAssetFailed(true)");
+    expect(fileIconSource).toContain("fileIconCache");
+    expect(fileIconSource).toContain("resolveInstalledAppIconUrl");
     expect(compactTreeSource).toContain("treeNodeIconEntry(node, entryMap)");
     expect(compactTreeSource).toContain("<FileIcon entry={treeNodeIconEntry(node, entryMap)} />");
     expect(treeSource).not.toContain("<FolderOpen");
@@ -283,15 +276,27 @@ describe("File Explorer mobile menu contracts", () => {
   });
 
   it("resolves host-relative .app icon URLs before rendering them inside the plugin iframe", () => {
-    const source = readSource("src/main.tsx");
-    const fileIconSource = source.slice(
-      source.indexOf("function FileIcon("),
-      source.indexOf("function decodeReadResult("),
-    );
+    const fileIconSource = readSource("src/file-icon.tsx");
 
-    expect(source).toContain("APPKITS_HOST_ORIGIN");
-    expect(source).toContain("resolveHostIconUrl");
-    expect(fileIconSource).toContain("resolveHostIconUrl(");
+    expect(fileIconSource).toContain("APPKITS_HOST_ORIGIN");
+    expect(fileIconSource).toContain("resolveHostIconUrl");
+    expect(fileIconSource).toContain("pluginSlugCandidateFromAppFileName");
+    expect(fileIconSource).toContain("apps.list()");
+  });
+
+  it("reuses loaded folder listings and does not invent icon cache timestamps", () => {
+    const source = readSource("src/main.tsx");
+    const refreshStart = source.indexOf(
+      "const result = await appkits.files.list(targetDirectory);",
+    );
+    const catchStart = source.indexOf("} catch {", refreshStart);
+    const successPath = source.slice(refreshStart, catchStart);
+
+    expect(source).toContain(
+      "if (loadedDirectoriesRef.current.has(normalizePath(currentPath))) return;",
+    );
+    expect(successPath).not.toContain("new Date().toISOString()");
+    expect(successPath).toContain('typeof entry.updatedAt === "string"');
   });
 
   it("follows the host theme while preserving the earlier light surface", () => {

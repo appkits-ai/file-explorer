@@ -219,7 +219,7 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource).toContain("desktopFileIconName(entry)");
     expect(fileIconSource).toContain("getDesktopIconAssetPath(iconName)");
     expect(fileIconSource).toContain("parseAppKitsAppFile");
-    expect(compactFileIconSource).toContain("resolveHostIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl)");
+    expect(compactFileIconSource).toContain("appFile?.marketplaceIconUrl || appFile?.iconUrl");
     expect(fileIconSource).toContain('if (type !== "app" || entry.temporary)');
     expect(fileIconSource).toContain("file-app-icon-placeholder");
     expect(styles).toContain(".file-icon-asset");
@@ -253,7 +253,6 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).not.toContain("DEFAULT_FILE_ICON_ASSET");
     expect(fileIconSource).toContain("BlankFileIcon");
     expect(fileIconSource).toContain("scheduleFileIconBodyRead");
-    expect(fileIconSource).toContain("setIconAssetFailed(true)");
     expect(fileIconSource).toContain("fileIconCache");
     expect(fileIconSource).toContain("resolveInstalledAppIconUrl");
     expect(compactTreeSource).toContain("treeNodeIconEntry(node, entryMap)");
@@ -275,13 +274,13 @@ describe("File Explorer mobile menu contracts", () => {
     expect(model).toContain("filterVisibleEntries");
   });
 
-  it("resolves host-relative .app icon URLs before rendering them inside the plugin iframe", () => {
+  it("uses host-resolved absolute .app icons inside the plugin iframe", () => {
     const fileIconSource = readSource("src/file-icon.tsx");
 
-    expect(fileIconSource).toContain("APPKITS_HOST_ORIGIN");
-    expect(fileIconSource).toContain("resolveHostIconUrl");
     expect(fileIconSource).toContain("pluginSlugCandidateFromAppFileName");
     expect(fileIconSource).toContain("apps.list()");
+    expect(fileIconSource).toContain("app?.icon?.trim()");
+    expect(fileIconSource).not.toContain("resolveHostIconUrl");
   });
 
   it("reuses loaded folder listings and does not invent icon cache timestamps", () => {

@@ -16,7 +16,6 @@ import {
 
 const FILE_ICON_BODY_READ_DELAY_MS = 80;
 const MAX_CONCURRENT_FILE_ICON_BODY_READS = 2;
-const APPKITS_HOST_ORIGIN = "https://appkits.ai";
 
 type FileReadResult = Awaited<ReturnType<typeof appkits.files.read>>;
 
@@ -37,31 +36,6 @@ const fileIconCache = new Map<string, CachedFileIcon>();
 let installedAppsPromise: Promise<
   readonly { id: string; icon?: string }[]
 > | null = null;
-
-/**
- * 把宿主相对路径或绝对 URL 收成 iframe 可加载的图标地址。
- * Resolves a host-relative path or absolute URL into an icon address the plugin iframe can load.
- */
-export function resolveHostIconUrl(iconUrl: string | undefined): string {
-  const trimmed = iconUrl?.trim() ?? "";
-  if (!trimmed) return "";
-  if (trimmed.startsWith("/")) {
-    return new URL(trimmed, appkitsHostOrigin()).toString();
-  }
-  return trimmed;
-}
-
-/** 用 referrer 或生产宿主源解析相对图标。 Uses the document referrer or the production host origin for relative icons. */
-function appkitsHostOrigin(): string {
-  if (typeof document === "undefined" || !document.referrer) {
-    return APPKITS_HOST_ORIGIN;
-  }
-  try {
-    return new URL(document.referrer).origin;
-  } catch {
-    return APPKITS_HOST_ORIGIN;
-  }
-}
 
 /**
  * 从任意 .app 文件名推出可匹配已安装插件的 slug；空格与下划线归一为连字符。
@@ -89,34 +63,13 @@ function listInstalledApps(): Promise<readonly { id: string; icon?: string }[]> 
   return installedAppsPromise;
 }
 
-/**
- * 去掉 image: 前缀，并把宿主相对路径收成可加载 URL。
- * Strips an image: prefix and resolves a host-relative path to a loadable URL.
- */
-function iconUrlFromAppIcon(icon: string | undefined): string {
-  const trimmed = icon?.trim() ?? "";
-  if (!trimmed) return "";
-  const withoutPrefix = trimmed.startsWith("image:")
-    ? trimmed.slice("image:".length)
-    : trimmed;
-  if (
-    withoutPrefix.startsWith("/") ||
-    /^https?:\/\//i.test(withoutPrefix) ||
-    /^(data|blob):/i.test(withoutPrefix)
-  ) {
-    return resolveHostIconUrl(withoutPrefix);
-  }
-  const asset = getDesktopIconAssetPath(withoutPrefix);
-  return asset ? resolveHostIconUrl(asset) : "";
-}
-
 /** 用已安装应用注册表图标，而不是过期的 .app 正文 URL。 Prefers the installed app registry icon over a stale .app body URL. */
 async function resolveInstalledAppIconUrl(path: string): Promise<string> {
   const slug = pluginSlugCandidateFromAppFileName(path);
   if (!slug) return "";
   const apps = await listInstalledApps();
   const app = apps.find((item) => item.id === `plugin:${slug}`);
-  return iconUrlFromAppIcon(app?.icon);
+  return app?.icon?.trim() ?? "";
 }
 
 function drainFileIconBodyReads(): void {
@@ -202,14 +155,9 @@ export function FileIcon({
   const [thumbnail, setThumbnail] = React.useState("");
   const [appIconUrl, setAppIconUrl] = React.useState("");
   const [appIconFailed, setAppIconFailed] = React.useState(false);
-  const [iconAssetFailed, setIconAssetFailed] = React.useState(false);
   const type = fileTypeKind(entry);
   const iconName = desktopFileIconName(entry);
   const iconAsset = getDesktopIconAssetPath(iconName);
-
-  React.useEffect(() => {
-    setIconAssetFailed(false);
-  }, [iconAsset]);
 
   React.useEffect(() => {
     if (type !== "image" || entry.temporary) {
@@ -280,9 +228,9 @@ export function FileIcon({
         entry.path,
         (file) => {
           const appFile = parseAppKitsAppFile(decodeReadResult(file));
-          const nextUrl = resolveHostIconUrl(
-            appFile?.marketplaceIconUrl || appFile?.iconUrl,
-          );
+          const nextUrl = (
+            appFile?.marketplaceIconUrl || appFile?.iconUrl
+          )?.trim() ?? "";
           if (nextUrl) {
             fileIconCache.set(cacheKey, { kind: "image", src: nextUrl });
             setAppIconUrl(nextUrl);
@@ -328,7 +276,7 @@ export function FileIcon({
       />
     );
   }
-  if (!iconAsset || iconAssetFailed) return <BlankFileIcon large={large} />;
+  if (!iconAsset) return <BlankFileIcon large={large} />;
   return (
     <span
       className="file-icon"
@@ -339,7 +287,6 @@ export function FileIcon({
         src={iconAsset}
         alt=""
         className="file-icon-asset"
-        onError={() => setIconAssetFailed(true)}
       />
     </span>
   );

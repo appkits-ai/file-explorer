@@ -245,7 +245,7 @@ export function FileIcon({
         setThumbnail("");
       },
     );
-  }, [entry.contentType, entry.path, entry.size, entry.temporary, entry.updatedAt, type]);
+  }, [entry, type]);
 
   React.useEffect(() => {
     if (type !== "app" || entry.temporary) {
@@ -304,7 +304,7 @@ export function FileIcon({
       cancelled = true;
       cancelBodyRead?.();
     };
-  }, [entry.path, entry.size, entry.temporary, entry.updatedAt, type]);
+  }, [entry, type]);
 
   if (thumbnail) {
     return (

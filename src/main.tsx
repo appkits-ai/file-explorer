@@ -16,17 +16,15 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { parseAppKitsAppFile } from "@appkits-ai/sdk/app-file";
 import * as appkits from "@appkits-ai/sdk/client";
-import { getDesktopIconAssetPath } from "@appkits-ai/sdk/desktop-icons";
 import { Button } from "@appkits-ai/ui";
+import { FileIcon } from "./file-icon";
 import {
   HOME_ROOT,
   breadcrumbSegments,
   buildLocationTree,
   childEntries,
   contextMenuItemIdFromSelection,
-  desktopFileIconName,
   filterVisibleEntries,
   fileTypeKind,
   filenameFromPath,
@@ -62,10 +60,6 @@ import {
 } from "./file-model";
 import { pluralSuffix, t, type TranslationKey } from "./i18n";
 import "./styles.css";
-
-const FILE_ICON_BODY_READ_DELAY_MS = 80;
-const MAX_CONCURRENT_FILE_ICON_BODY_READS = 2;
-const APPKITS_HOST_ORIGIN = "https://appkits.ai";
 
 type ContextMenuState =
   | { x: number; y: number; type: "background"; targetDirectory: string }
@@ -117,18 +111,6 @@ type ShellFileOpenerSummary = {
 };
 
 type FilesChangedEvent = Parameters<Parameters<typeof appkits.files.onChanged>[0]>[0];
-type FileReadResult = Awaited<ReturnType<typeof appkits.files.read>>;
-
-interface ScheduledFileIconBodyRead {
-  path: string;
-  cancelled: boolean;
-  onRead: (file: FileReadResult) => void;
-  onError: () => void;
-}
-
-const pendingFileIconBodyReads: ScheduledFileIconBodyRead[] = [];
-let activeFileIconBodyReads = 0;
-let fileIconBodyReadTimer: number | null = null;
 
 interface ClipboardState {
   mode: "copy" | "cut";
@@ -200,25 +182,6 @@ function displayPath(locale: string | undefined, path: string): string {
   return visiblePath(path);
 }
 
-function resolveHostIconUrl(iconUrl: string | undefined): string {
-  const trimmed = iconUrl?.trim() ?? "";
-  if (!trimmed) return "";
-  if (trimmed.startsWith("/")) {
-    return new URL(trimmed, appkitsHostOrigin()).toString();
-  }
-  return trimmed;
-}
-
-function appkitsHostOrigin(): string {
-  if (typeof document === "undefined" || !document.referrer) {
-    return APPKITS_HOST_ORIGIN;
-  }
-  try {
-    return new URL(document.referrer).origin;
-  } catch {
-    return APPKITS_HOST_ORIGIN;
-  }
-}
 
 function pathFromDisplayPath(locale: string | undefined, path: string): string {
   const trimmed = path.trim();
@@ -276,52 +239,6 @@ function filesChangedEventSignature(event: FilesChangedEvent): string {
     signature: event.signature || "",
     paths: [...(event.paths ?? [])].sort(),
   });
-}
-
-function drainFileIconBodyReads(): void {
-  while (
-    activeFileIconBodyReads < MAX_CONCURRENT_FILE_ICON_BODY_READS &&
-    pendingFileIconBodyReads.length > 0
-  ) {
-    const task = pendingFileIconBodyReads.shift();
-    if (!task || task.cancelled) continue;
-    activeFileIconBodyReads += 1;
-    void appkits.files
-      .read(task.path)
-      .then((file) => {
-        if (!task.cancelled) task.onRead(file);
-      })
-      .catch(() => {
-        if (!task.cancelled) task.onError();
-      })
-      .finally(() => {
-        activeFileIconBodyReads = Math.max(0, activeFileIconBodyReads - 1);
-        drainFileIconBodyReads();
-      });
-  }
-}
-
-function scheduleFileIconBodyRead(
-  path: string,
-  onRead: (file: FileReadResult) => void,
-  onError: () => void,
-): () => void {
-  const task: ScheduledFileIconBodyRead = {
-    path,
-    cancelled: false,
-    onRead,
-    onError,
-  };
-  pendingFileIconBodyReads.push(task);
-  if (fileIconBodyReadTimer === null) {
-    fileIconBodyReadTimer = window.setTimeout(() => {
-      fileIconBodyReadTimer = null;
-      drainFileIconBodyReads();
-    }, FILE_ICON_BODY_READ_DELAY_MS);
-  }
-  return () => {
-    task.cancelled = true;
-  };
 }
 
 function treeNodeIconEntry(
@@ -433,19 +350,21 @@ function App() {
       );
       try {
         const result = await appkits.files.list(targetDirectory);
-        const listedEntries = result.entries.map((entry) => ({
-          path: normalizePath(entry.path),
-          name: entry.name || filenameFromPath(entry.path),
-          kind: entry.kind,
-          contentType: entry.contentType,
-          size: entry.size,
-          local: entry.local,
-          temporary: entry.temporary,
-          updatedAt:
-            "updatedAt" in entry && typeof entry.updatedAt === "string"
-              ? entry.updatedAt
-              : new Date().toISOString(),
-        }));
+        const listedEntries = result.entries.map((entry) => {
+          const listed: ExplorerEntry = {
+            path: normalizePath(entry.path),
+            name: entry.name || filenameFromPath(entry.path),
+            kind: entry.kind,
+            contentType: entry.contentType,
+            size: entry.size,
+            local: entry.local,
+            temporary: entry.temporary,
+          };
+          if ("updatedAt" in entry && typeof entry.updatedAt === "string") {
+            listed.updatedAt = entry.updatedAt;
+          }
+          return listed;
+        });
         setEntries((current) => {
           const nextEntries = mergeDirectoryListing(
             current,
@@ -547,6 +466,7 @@ function App() {
   }, []);
 
   React.useEffect(() => {
+    if (loadedDirectoriesRef.current.has(normalizePath(currentPath))) return;
     void refresh(currentPath);
   }, [currentPath, refresh]);
 
@@ -2146,103 +2066,6 @@ function ToolbarButton({
       >
         {children}
       </Button>
-    </span>
-  );
-}
-
-function BlankFileIcon({ large = false }: { large?: boolean }) {
-  return (
-    <span
-      className={large ? "file-app-icon-placeholder large" : "file-app-icon-placeholder"}
-      aria-hidden="true"
-    />
-  );
-}
-
-function FileIcon({ entry, large = false }: { entry: ExplorerEntry; large?: boolean }) {
-  const [thumbnail, setThumbnail] = React.useState("");
-  const [appIconUrl, setAppIconUrl] = React.useState("");
-  const [appIconFailed, setAppIconFailed] = React.useState(false);
-  const [iconAssetFailed, setIconAssetFailed] = React.useState(false);
-  const type = fileTypeKind(entry);
-  const iconName = desktopFileIconName(entry);
-  const iconAsset = getDesktopIconAssetPath(iconName);
-
-  React.useEffect(() => {
-    setIconAssetFailed(false);
-  }, [iconAsset]);
-
-  React.useEffect(() => {
-    if (type !== "image" || entry.temporary) {
-      setThumbnail("");
-      return;
-    }
-    setThumbnail("");
-    return scheduleFileIconBodyRead(
-      entry.path,
-      (file) => {
-        if (!file.bodyBase64) return;
-        const contentType =
-          file.contentType || entry.contentType || "image/png";
-        setThumbnail(`data:${contentType};base64,${file.bodyBase64}`);
-      },
-      () => setThumbnail(""),
-    );
-  }, [entry.contentType, entry.path, entry.temporary, type]);
-
-  React.useEffect(() => {
-    if (type !== "app" || entry.temporary) {
-      setAppIconUrl("");
-      setAppIconFailed(false);
-      return;
-    }
-    setAppIconUrl("");
-    setAppIconFailed(false);
-    return scheduleFileIconBodyRead(
-      entry.path,
-      (file) => {
-        const appFile = parseAppKitsAppFile(decodeReadResult(file));
-        setAppIconUrl(resolveHostIconUrl(appFile?.marketplaceIconUrl || appFile?.iconUrl));
-        setAppIconFailed(false);
-      },
-      () => {
-        setAppIconUrl("");
-        setAppIconFailed(false);
-      },
-    );
-  }, [entry.path, entry.temporary, entry.updatedAt, type]);
-
-  if (thumbnail) {
-    return (
-      <img
-        src={thumbnail}
-        alt=""
-        className={large ? "file-thumbnail large" : "file-thumbnail"}
-      />
-    );
-  }
-  if (appIconUrl && !appIconFailed) {
-    return (
-      <img
-        src={appIconUrl}
-        alt=""
-        className={large ? "file-icon-image large" : "file-icon-image"}
-        onError={() => setAppIconFailed(true)}
-      />
-    );
-  }
-  if (type === "app") {
-    return <BlankFileIcon large={large} />;
-  }
-  if (!iconAsset || iconAssetFailed) return <BlankFileIcon large={large} />;
-  return (
-    <span className="file-icon" data-icon={iconName} data-large={large ? "true" : undefined}>
-      <img
-        src={iconAsset}
-        alt=""
-        className="file-icon-asset"
-        onError={() => setIconAssetFailed(true)}
-      />
     </span>
   );
 }

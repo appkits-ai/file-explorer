@@ -34,7 +34,7 @@ type CachedFileIcon = { kind: "image"; src: string } | { kind: "empty" };
 
 const fileIconCache = new Map<string, CachedFileIcon>();
 let installedAppsPromise: Promise<
-  readonly { id: string; icon?: string }[]
+  readonly { id: string; icon?: string; hasUpdate?: boolean }[]
 > | null = null;
 
 /**
@@ -58,18 +58,25 @@ function fileIconCacheKey(entry: ExplorerEntry, kind: "app" | "image"): string {
 }
 
 /** 复用一次 apps.list()，避免每个图标各打一枪。 Reuses one apps.list() so each icon does not fetch the registry alone. */
-function listInstalledApps(): Promise<readonly { id: string; icon?: string }[]> {
+function listInstalledApps(): Promise<
+  readonly { id: string; icon?: string; hasUpdate?: boolean }[]
+> {
   installedAppsPromise ??= appkits.apps.list().catch(() => []);
   return installedAppsPromise;
 }
 
-/** 用已安装应用注册表图标，而不是过期的 .app 正文 URL。 Prefers the installed app registry icon over a stale .app body URL. */
-async function resolveInstalledAppIconUrl(path: string): Promise<string> {
+/** 用已安装应用注册表图标和更新标记，而不是过期的 .app 正文 URL。 Prefers the installed app registry icon and update flag over a stale .app body URL. */
+async function resolveInstalledAppMeta(
+  path: string,
+): Promise<{ iconUrl: string; hasUpdate: boolean }> {
   const slug = pluginSlugCandidateFromAppFileName(path);
-  if (!slug) return "";
+  if (!slug) return { iconUrl: "", hasUpdate: false };
   const apps = await listInstalledApps();
   const app = apps.find((item) => item.id === `plugin:${slug}`);
-  return app?.icon?.trim() ?? "";
+  return {
+    iconUrl: app?.icon?.trim() ?? "",
+    hasUpdate: app?.hasUpdate === true,
+  };
 }
 
 function drainFileIconBodyReads(): void {
@@ -155,6 +162,7 @@ export function FileIcon({
   const [thumbnail, setThumbnail] = React.useState("");
   const [appIconUrl, setAppIconUrl] = React.useState("");
   const [appIconFailed, setAppIconFailed] = React.useState(false);
+  const [appHasUpdate, setAppHasUpdate] = React.useState(false);
   const type = fileTypeKind(entry);
   const iconName = desktopFileIconName(entry);
   const iconAsset = getDesktopIconAssetPath(iconName);
@@ -217,11 +225,12 @@ export function FileIcon({
     setAppIconFailed(false);
     let cancelled = false;
     let cancelBodyRead: (() => void) | undefined;
-    void resolveInstalledAppIconUrl(entry.path).then((registryUrl) => {
+    void resolveInstalledAppMeta(entry.path).then((meta) => {
       if (cancelled) return;
-      if (registryUrl) {
-        fileIconCache.set(cacheKey, { kind: "image", src: registryUrl });
-        setAppIconUrl(registryUrl);
+      setAppHasUpdate(meta.hasUpdate);
+      if (meta.iconUrl) {
+        fileIconCache.set(cacheKey, { kind: "image", src: meta.iconUrl });
+        setAppIconUrl(meta.iconUrl);
         return;
       }
       cancelBodyRead = scheduleFileIconBodyRead(
@@ -265,15 +274,28 @@ export function FileIcon({
   }
   if (appIconUrl && !appIconFailed) {
     return (
-      <img
-        src={appIconUrl}
-        alt=""
-        className={large ? "file-icon-image large" : "file-icon-image"}
-        onError={() => {
-          fileIconCache.set(fileIconCacheKey(entry, "app"), { kind: "empty" });
-          setAppIconFailed(true);
-        }}
-      />
+      <span
+        className="file-icon"
+        data-icon={iconName}
+        data-large={large ? "true" : undefined}
+      >
+        <img
+          src={appIconUrl}
+          alt=""
+          className={large ? "file-icon-image large" : "file-icon-image"}
+          onError={() => {
+            fileIconCache.set(fileIconCacheKey(entry, "app"), { kind: "empty" });
+            setAppIconFailed(true);
+          }}
+        />
+        {appHasUpdate ? (
+          <span
+            aria-label="This plugin has an update"
+            title="This plugin has an update"
+            className="file-update-badge"
+          />
+        ) : null}
+      </span>
     );
   }
   if (!iconAsset) return <BlankFileIcon large={large} />;
@@ -288,6 +310,13 @@ export function FileIcon({
         alt=""
         className="file-icon-asset"
       />
+      {appHasUpdate ? (
+        <span
+          aria-label="This plugin has an update"
+          title="This plugin has an update"
+          className="file-update-badge"
+        />
+      ) : null}
     </span>
   );
 }

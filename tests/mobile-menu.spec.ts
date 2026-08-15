@@ -254,7 +254,8 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource).toContain("BlankFileIcon");
     expect(fileIconSource).toContain("scheduleFileIconBodyRead");
     expect(fileIconSource).toContain("fileIconCache");
-    expect(fileIconSource).toContain("resolveInstalledAppIconUrl");
+    expect(fileIconSource).toContain("resolveInstalledAppMeta");
+    expect(fileIconSource).toContain("file-update-badge");
     expect(compactTreeSource).toContain("treeNodeIconEntry(node, entryMap)");
     expect(compactTreeSource).toContain("<FileIcon entry={treeNodeIconEntry(node, entryMap)} />");
     expect(treeSource).not.toContain("<FolderOpen");
@@ -280,6 +281,7 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource).toContain("pluginSlugCandidateFromAppFileName");
     expect(fileIconSource).toContain("apps.list()");
     expect(fileIconSource).toContain("app?.icon?.trim()");
+    expect(fileIconSource).toContain("app?.hasUpdate === true");
     expect(fileIconSource).not.toContain("resolveHostIconUrl");
   });
 

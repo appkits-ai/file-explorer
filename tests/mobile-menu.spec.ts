@@ -218,8 +218,8 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain('t(locale, "toolbar.refresh")');
     expect(fileIconSource).toContain("desktopFileIconName(entry)");
     expect(fileIconSource).toContain("getDesktopIconAssetPath(iconName)");
-    expect(fileIconSource).toContain("parseAppKitsAppFile");
-    expect(compactFileIconSource).toContain("appFile?.marketplaceIconUrl || appFile?.iconUrl");
+    expect(fileIconSource).not.toContain("parseAppKitsAppFile");
+    expect(compactFileIconSource).not.toContain("marketplaceIconUrl || appFile?.iconUrl");
     expect(fileIconSource).toContain('if (type !== "app" || entry.temporary)');
     expect(fileIconSource).toContain("file-app-icon-placeholder");
     expect(styles).toContain(".file-icon-asset");
@@ -283,6 +283,12 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource).toContain("app?.icon?.trim()");
     expect(fileIconSource).toContain("app?.hasUpdate === true");
     expect(fileIconSource).not.toContain("resolveHostIconUrl");
+    expect(fileIconSource).not.toContain("parseAppKitsAppFile");
+    expect(fileIconSource).not.toContain("decodeReadResult");
+    const appEffect = fileIconSource.slice(
+      fileIconSource.indexOf('if (type !== "app" || entry.temporary)'),
+    );
+    expect(appEffect).not.toContain("scheduleFileIconBodyRead");
   });
 
   it("reuses loaded folder listings and does not invent icon cache timestamps", () => {

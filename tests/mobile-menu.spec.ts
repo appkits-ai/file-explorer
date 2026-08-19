@@ -283,6 +283,8 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource).toContain("pluginSlugCandidateFromAppFileName");
     expect(fileIconSource).toContain("apps.list()");
     expect(fileIconSource).toContain("FILE_ICON_SESSION_CACHE_KEY");
+    expect(fileIconSource).toContain("fileIconCacheStorage");
+    expect(fileIconSource).toContain("localStorage");
     expect(fileIconSource).toContain("MAX_CONCURRENT_FILE_ICON_BODY_READS = 6");
     expect(fileIconSource).toContain("schedulePersistFileIconCache");
     expect(fileIconSource).not.toContain("FILE_ICON_BODY_READ_DELAY_MS");

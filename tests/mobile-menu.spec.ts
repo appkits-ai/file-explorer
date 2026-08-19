@@ -280,6 +280,9 @@ describe("File Explorer mobile menu contracts", () => {
 
     expect(fileIconSource).toContain("pluginSlugCandidateFromAppFileName");
     expect(fileIconSource).toContain("apps.list()");
+    expect(fileIconSource).toContain("FILE_ICON_SESSION_CACHE_KEY");
+    expect(fileIconSource).toContain("readPersistedInstalledApps");
+    expect(fileIconSource).toContain("rememberFileIcon");
     expect(fileIconSource).toContain("app?.icon?.trim()");
     expect(fileIconSource).toContain("app?.hasUpdate === true");
     expect(fileIconSource).not.toContain("resolveHostIconUrl");

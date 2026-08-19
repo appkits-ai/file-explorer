@@ -1,3 +1,7 @@
+/**
+ * 资源管理器目录模型、路径与会话列表缓存。
+ * File Explorer directory model, path helpers, and session listing cache.
+ */
 import {
   getDesktopFileIconName,
   type DesktopFileIconName,
@@ -673,4 +677,105 @@ export function selectedPathFromLaunchParams(
     if (typeof path === "string") return normalizePath(path);
   }
   return null;
+}
+
+export const DIRECTORY_LISTING_SESSION_CACHE_KEY =
+  "appkits.file-explorer.directory-listing-cache.v1";
+
+const MAX_PERSISTED_DIRECTORY_ENTRIES = 400;
+
+function isPersistedExplorerEntry(value: unknown): value is ExplorerEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.path === "string" &&
+    typeof entry.name === "string" &&
+    (entry.kind === "file" || entry.kind === "directory")
+  );
+}
+
+/**
+ * 从会话 JSON 恢复上次目录列表，供首屏立刻画出。
+ * Restores the last directory listing from session JSON so the first paint can show rows.
+ */
+export function parsePersistedDirectoryListing(
+  raw: string | null,
+): ExplorerEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const entries: ExplorerEntry[] = [];
+    for (const item of parsed) {
+      if (!isPersistedExplorerEntry(item)) continue;
+      const entry: ExplorerEntry = {
+        path: normalizePath(item.path),
+        name: item.name,
+        kind: item.kind,
+      };
+      if (typeof item.contentType === "string") entry.contentType = item.contentType;
+      if (typeof item.size === "number") entry.size = item.size;
+      if (typeof item.updatedAt === "string") entry.updatedAt = item.updatedAt;
+      entries.push(entry);
+      if (entries.length >= MAX_PERSISTED_DIRECTORY_ENTRIES) break;
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 把可恢复的目录列表编码为会话 JSON，去掉本地乐观行。
+ * Encodes a restorable directory listing as session JSON and drops local optimistic rows.
+ */
+export function serializeDirectoryListing(
+  entries: readonly ExplorerEntry[],
+): string {
+  return JSON.stringify(
+    entries
+      .filter((entry) => entry.local !== true && entry.temporary !== true)
+      .slice(0, MAX_PERSISTED_DIRECTORY_ENTRIES)
+      .map((entry) => ({
+        path: entry.path,
+        name: entry.name,
+        kind: entry.kind,
+        ...(entry.contentType ? { contentType: entry.contentType } : {}),
+        ...(typeof entry.size === "number" ? { size: entry.size } : {}),
+        ...(entry.updatedAt ? { updatedAt: entry.updatedAt } : {}),
+      })),
+  );
+}
+
+/**
+ * 读取上次目录列表的会话快照。
+ * Reads the last directory-listing session snapshot.
+ */
+export function readPersistedDirectoryListing(): ExplorerEntry[] {
+  if (typeof sessionStorage === "undefined") return [];
+  try {
+    return parsePersistedDirectoryListing(
+      sessionStorage.getItem(DIRECTORY_LISTING_SESSION_CACHE_KEY),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 把当前目录列表写回会话存储。
+ * Writes the current directory listing back to session storage.
+ */
+export function persistDirectoryListing(
+  entries: readonly ExplorerEntry[],
+): void {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      DIRECTORY_LISTING_SESSION_CACHE_KEY,
+      serializeDirectoryListing(entries),
+    );
+  } catch {
+    // Quota or private-mode failures must not block listing paint.
+  }
 }

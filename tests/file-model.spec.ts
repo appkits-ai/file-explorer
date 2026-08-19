@@ -14,6 +14,8 @@ import {
   localPendingEntry,
   mergeDirectoryListing,
   normalizePath,
+  parsePersistedDirectoryListing,
+  serializeDirectoryListing,
   pendingCreateEntry,
   pendingCreatePath,
   pendingCreateTarget,
@@ -469,6 +471,35 @@ describe("file explorer model", () => {
     expect(desktopFileIconName({ path: "/home/agent/editor.app", name: "editor.app", kind: "file" })).toBe(
       "file-executable",
     );
+  });
+
+  it("round-trips a directory listing session snapshot without optimistic rows", () => {
+    const raw = serializeDirectoryListing([
+      {
+        path: "/home/agent/readme.md",
+        name: "readme.md",
+        kind: "file",
+        size: 12,
+        updatedAt: "2026-08-19T00:00:00.000Z",
+      },
+      {
+        path: "/home/agent/draft.txt",
+        name: "draft.txt",
+        kind: "file",
+        local: true,
+        temporary: true,
+      },
+    ]);
+    expect(parsePersistedDirectoryListing("not-json")).toEqual([]);
+    expect(parsePersistedDirectoryListing(raw)).toEqual([
+      {
+        path: "/home/agent/readme.md",
+        name: "readme.md",
+        kind: "file",
+        size: 12,
+        updatedAt: "2026-08-19T00:00:00.000Z",
+      },
+    ]);
   });
 
   it("does not directly preview text, json, or app launcher contents", () => {

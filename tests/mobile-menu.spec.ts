@@ -161,6 +161,8 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain('setViewMode("gallery")');
     expect(source).toContain("appkits.files.list(targetDirectory)");
     expect(source).toContain("mergeDirectoryListing(");
+    expect(source).toContain("readPersistedDirectoryListing()");
+    expect(source).toContain("persistDirectoryListing(nextEntries)");
     expect(source).toContain("loadingDirectories");
     expect(source).toContain("loadedDirectories");
     expect(styles).toContain(".refresh-icon.spinning");
@@ -281,6 +283,9 @@ describe("File Explorer mobile menu contracts", () => {
     expect(fileIconSource).toContain("pluginSlugCandidateFromAppFileName");
     expect(fileIconSource).toContain("apps.list()");
     expect(fileIconSource).toContain("FILE_ICON_SESSION_CACHE_KEY");
+    expect(fileIconSource).toContain("MAX_CONCURRENT_FILE_ICON_BODY_READS = 6");
+    expect(fileIconSource).toContain("schedulePersistFileIconCache");
+    expect(fileIconSource).not.toContain("FILE_ICON_BODY_READ_DELAY_MS");
     expect(fileIconSource).toContain("readPersistedInstalledApps");
     expect(fileIconSource).toContain("rememberFileIcon");
     expect(fileIconSource).toContain("app?.icon?.trim()");

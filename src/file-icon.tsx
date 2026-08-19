@@ -13,8 +13,8 @@ import {
   type ExplorerEntry,
 } from "./file-model";
 
-const FILE_ICON_BODY_READ_DELAY_MS = 80;
-const MAX_CONCURRENT_FILE_ICON_BODY_READS = 2;
+const MAX_CONCURRENT_FILE_ICON_BODY_READS = 6;
+const FILE_ICON_CACHE_PERSIST_DELAY_MS = 200;
 const INSTALLED_APPS_LIST_TTL_MS = 2000;
 export const FILE_ICON_SESSION_CACHE_KEY =
   "appkits.file-explorer.file-icon-cache.v1";
@@ -37,7 +37,7 @@ interface ScheduledFileIconBodyRead {
 
 const pendingFileIconBodyReads: ScheduledFileIconBodyRead[] = [];
 let activeFileIconBodyReads = 0;
-let fileIconBodyReadTimer: number | null = null;
+let persistFileIconCacheTimer: number | null = null;
 
 type CachedFileIcon = { kind: "image"; src: string } | { kind: "empty" };
 
@@ -95,9 +95,25 @@ function persistFileIconCache(): void {
   }
 }
 
+/**
+ * 合并多次图标写入后再落盘，避免每张缩略图都序列化整份缓存。
+ * Coalesces icon writes before persisting so each thumbnail does not serialize the whole cache.
+ */
+function schedulePersistFileIconCache(): void {
+  if (typeof window === "undefined") {
+    persistFileIconCache();
+    return;
+  }
+  if (persistFileIconCacheTimer !== null) return;
+  persistFileIconCacheTimer = window.setTimeout(() => {
+    persistFileIconCacheTimer = null;
+    persistFileIconCache();
+  }, FILE_ICON_CACHE_PERSIST_DELAY_MS);
+}
+
 function rememberFileIcon(key: string, value: CachedFileIcon): void {
   fileIconCache.set(key, value);
-  persistFileIconCache();
+  schedulePersistFileIconCache();
 }
 
 /**
@@ -227,12 +243,7 @@ function scheduleFileIconBodyRead(
     onError,
   };
   pendingFileIconBodyReads.push(task);
-  if (fileIconBodyReadTimer === null) {
-    fileIconBodyReadTimer = window.setTimeout(() => {
-      fileIconBodyReadTimer = null;
-      drainFileIconBodyReads();
-    }, FILE_ICON_BODY_READ_DELAY_MS);
-  }
+  drainFileIconBodyReads();
   return () => {
     task.cancelled = true;
   };

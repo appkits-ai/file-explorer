@@ -36,12 +36,14 @@ import {
   mergeDirectoryListing,
   normalizePath,
   parentPath,
+  pathFromLaunchParams,
+  pathFromVisiblePath,
   pendingCreateEntry,
   pendingCreatePath,
   pendingCreateTarget,
+  persistDirectoryListing,
   planMoveTargets,
-  pathFromLaunchParams,
-  pathFromVisiblePath,
+  readPersistedDirectoryListing,
   rectsIntersect,
   sanitizeFilename,
   searchEntries,
@@ -253,7 +255,9 @@ function treeNodeIconEntry(
 }
 
 function App() {
-  const [entries, setEntries] = React.useState<ExplorerEntry[]>([]);
+  const [entries, setEntries] = React.useState<ExplorerEntry[]>(() =>
+    readPersistedDirectoryListing(),
+  );
   const [currentPath, setCurrentPath] = React.useState(HOME_ROOT);
   const [selectedPaths, setSelectedPaths] = React.useState<string[]>([]);
   const [activePath, setActivePath] = React.useState<string | null>(null);
@@ -371,6 +375,7 @@ function App() {
             targetDirectory,
             listedEntries,
           );
+          persistDirectoryListing(nextEntries);
           const launchSelection = pendingLaunchSelectionRef.current;
           if (
             launchSelection &&

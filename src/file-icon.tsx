@@ -16,8 +16,17 @@ import {
 const FILE_ICON_BODY_READ_DELAY_MS = 80;
 const MAX_CONCURRENT_FILE_ICON_BODY_READS = 2;
 const INSTALLED_APPS_LIST_TTL_MS = 2000;
+export const FILE_ICON_SESSION_CACHE_KEY =
+  "appkits.file-explorer.file-icon-cache.v1";
+export const INSTALLED_APPS_SESSION_CACHE_KEY =
+  "appkits.file-explorer.installed-apps.v1";
 
 type FileReadResult = Awaited<ReturnType<typeof appkits.files.read>>;
+type InstalledAppSummary = {
+  id: string;
+  icon?: string;
+  hasUpdate?: boolean;
+};
 
 interface ScheduledFileIconBodyRead {
   path: string;
@@ -32,11 +41,100 @@ let fileIconBodyReadTimer: number | null = null;
 
 type CachedFileIcon = { kind: "image"; src: string } | { kind: "empty" };
 
-const fileIconCache = new Map<string, CachedFileIcon>();
-let installedAppsPromise: Promise<
-  readonly { id: string; icon?: string; hasUpdate?: boolean }[]
-> | null = null;
+const fileIconCache = hydrateFileIconCache();
+let installedAppsPromise: Promise<readonly InstalledAppSummary[]> | null = null;
 let installedAppsListedAt = 0;
+
+/**
+ * 从会话存储恢复图标缓存，让重新打开资源管理器不必再等宿主解码。
+ * Restores the icon cache from session storage so reopening Explorer does not wait for host decode.
+ */
+function hydrateFileIconCache(): Map<string, CachedFileIcon> {
+  const cache = new Map<string, CachedFileIcon>();
+  if (typeof sessionStorage === "undefined") return cache;
+  try {
+    const raw = sessionStorage.getItem(FILE_ICON_SESSION_CACHE_KEY);
+    if (!raw) return cache;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return cache;
+    }
+    for (const [key, value] of Object.entries(
+      parsed as Record<string, unknown>,
+    )) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const record = value as { kind?: unknown; src?: unknown };
+      if (record.kind === "empty") cache.set(key, { kind: "empty" });
+      if (
+        record.kind === "image" &&
+        typeof record.src === "string" &&
+        record.src
+      ) {
+        cache.set(key, { kind: "image", src: record.src });
+      }
+    }
+  } catch {
+    sessionStorage.removeItem(FILE_ICON_SESSION_CACHE_KEY);
+  }
+  return cache;
+}
+
+/**
+ * 把当前图标缓存写回会话存储。
+ * Writes the current icon cache back to session storage.
+ */
+function persistFileIconCache(): void {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      FILE_ICON_SESSION_CACHE_KEY,
+      JSON.stringify(Object.fromEntries(fileIconCache)),
+    );
+  } catch {
+    // Quota or private-mode failures must not block icon paint.
+  }
+}
+
+function rememberFileIcon(key: string, value: CachedFileIcon): void {
+  fileIconCache.set(key, value);
+  persistFileIconCache();
+}
+
+/**
+ * 读取上次宿主 apps.list 的会话快照。
+ * Reads the last host apps.list session snapshot.
+ */
+function readPersistedInstalledApps(): InstalledAppSummary[] {
+  if (typeof sessionStorage === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(INSTALLED_APPS_SESSION_CACHE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is InstalledAppSummary => {
+      return Boolean(
+        item &&
+          typeof item === "object" &&
+          typeof (item as InstalledAppSummary).id === "string",
+      );
+    });
+  } catch {
+    sessionStorage.removeItem(INSTALLED_APPS_SESSION_CACHE_KEY);
+    return [];
+  }
+}
+
+function persistInstalledApps(apps: readonly InstalledAppSummary[]): void {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      INSTALLED_APPS_SESSION_CACHE_KEY,
+      JSON.stringify(apps),
+    );
+  } catch {
+    // Quota or private-mode failures must not block icon paint.
+  }
+}
 
 /**
  * 从任意 .app 文件名推出可匹配已安装插件的 slug；空格与下划线归一为连字符。
@@ -62,16 +160,20 @@ function fileIconCacheKey(entry: ExplorerEntry, kind: "app" | "image"): string {
  * 短 TTL 复用 apps.list()，让桌面 catalog 占位稍后能被看到。
  * Reuses apps.list() for a short TTL so later desktop catalog placeholders can appear.
  */
-function listInstalledApps(): Promise<
-  readonly { id: string; icon?: string; hasUpdate?: boolean }[]
-> {
+function listInstalledApps(): Promise<readonly InstalledAppSummary[]> {
   const now = Date.now();
   if (
     !installedAppsPromise ||
     now - installedAppsListedAt > INSTALLED_APPS_LIST_TTL_MS
   ) {
     installedAppsListedAt = now;
-    installedAppsPromise = appkits.apps.list().catch(() => []);
+    installedAppsPromise = appkits.apps
+      .list()
+      .then((apps) => {
+        persistInstalledApps(apps);
+        return apps;
+      })
+      .catch(() => readPersistedInstalledApps());
   }
   return installedAppsPromise;
 }
@@ -186,17 +288,17 @@ export function FileIcon({
       entry.path,
       (file) => {
         if (!file.bodyBase64) {
-          fileIconCache.set(cacheKey, { kind: "empty" });
+          rememberFileIcon(cacheKey, { kind: "empty" });
           return;
         }
         const contentType =
           file.contentType || entry.contentType || "image/png";
         const src = `data:${contentType};base64,${file.bodyBase64}`;
-        fileIconCache.set(cacheKey, { kind: "image", src });
+        rememberFileIcon(cacheKey, { kind: "image", src });
         setThumbnail(src);
       },
       () => {
-        fileIconCache.set(cacheKey, { kind: "empty" });
+        rememberFileIcon(cacheKey, { kind: "empty" });
         setThumbnail("");
       },
     );
@@ -220,14 +322,26 @@ export function FileIcon({
       setAppIconFailed(false);
       return;
     }
-    setAppIconUrl("");
-    setAppIconFailed(false);
+    const slug = pluginSlugCandidateFromAppFileName(entry.path);
+    const sessionApp = slug
+      ? readPersistedInstalledApps().find((item) => item.id === `plugin:${slug}`)
+      : undefined;
+    if (sessionApp?.icon?.trim()) {
+      rememberFileIcon(cacheKey, { kind: "image", src: sessionApp.icon.trim() });
+      setAppIconUrl(sessionApp.icon.trim());
+      setAppHasUpdate(sessionApp.hasUpdate === true);
+      setAppIconFailed(false);
+    } else {
+      setAppIconUrl("");
+      setAppHasUpdate(false);
+      setAppIconFailed(false);
+    }
     let cancelled = false;
     void resolveInstalledAppMeta(entry.path).then((meta) => {
       if (cancelled) return;
       setAppHasUpdate(meta.hasUpdate);
       if (meta.iconUrl) {
-        fileIconCache.set(cacheKey, { kind: "image", src: meta.iconUrl });
+        rememberFileIcon(cacheKey, { kind: "image", src: meta.iconUrl });
         setAppIconUrl(meta.iconUrl);
         return;
       }
@@ -260,7 +374,7 @@ export function FileIcon({
           alt=""
           className={large ? "file-icon-image large" : "file-icon-image"}
           onError={() => {
-            fileIconCache.set(fileIconCacheKey(entry, "app"), { kind: "empty" });
+            rememberFileIcon(fileIconCacheKey(entry, "app"), { kind: "empty" });
             setAppIconFailed(true);
           }}
         />

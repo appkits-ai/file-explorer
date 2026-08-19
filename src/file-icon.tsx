@@ -1,10 +1,9 @@
 /**
- * 绘制资源管理器文件图标，并在会话内缓存已解析的缩略图与启动器图标。
- * Renders File Explorer file icons and caches resolved thumbnails and launcher icons for the session.
+ * 绘制资源管理器文件图标；.app 只用 host apps.list，图片缩略图才读正文。
+ * Renders File Explorer file icons; .app launchers use host apps.list, and only image thumbnails read bodies.
  */
 
 import React from "react";
-import { parseAppKitsAppFile } from "@appkits-ai/sdk/app-file";
 import * as appkits from "@appkits-ai/sdk/client";
 import { getDesktopIconAssetPath } from "@appkits-ai/sdk/desktop-icons";
 import {
@@ -16,6 +15,7 @@ import {
 
 const FILE_ICON_BODY_READ_DELAY_MS = 80;
 const MAX_CONCURRENT_FILE_ICON_BODY_READS = 2;
+const INSTALLED_APPS_LIST_TTL_MS = 2000;
 
 type FileReadResult = Awaited<ReturnType<typeof appkits.files.read>>;
 
@@ -36,6 +36,7 @@ const fileIconCache = new Map<string, CachedFileIcon>();
 let installedAppsPromise: Promise<
   readonly { id: string; icon?: string; hasUpdate?: boolean }[]
 > | null = null;
+let installedAppsListedAt = 0;
 
 /**
  * 从任意 .app 文件名推出可匹配已安装插件的 slug；空格与下划线归一为连字符。
@@ -57,15 +58,25 @@ function fileIconCacheKey(entry: ExplorerEntry, kind: "app" | "image"): string {
   return `${kind}:${entry.path}:${entry.size ?? ""}:${entry.updatedAt ?? ""}`;
 }
 
-/** 复用一次 apps.list()，避免每个图标各打一枪。 Reuses one apps.list() so each icon does not fetch the registry alone. */
+/**
+ * 短 TTL 复用 apps.list()，让桌面 catalog 占位稍后能被看到。
+ * Reuses apps.list() for a short TTL so later desktop catalog placeholders can appear.
+ */
 function listInstalledApps(): Promise<
   readonly { id: string; icon?: string; hasUpdate?: boolean }[]
 > {
-  installedAppsPromise ??= appkits.apps.list().catch(() => []);
+  const now = Date.now();
+  if (
+    !installedAppsPromise ||
+    now - installedAppsListedAt > INSTALLED_APPS_LIST_TTL_MS
+  ) {
+    installedAppsListedAt = now;
+    installedAppsPromise = appkits.apps.list().catch(() => []);
+  }
   return installedAppsPromise;
 }
 
-/** 用已安装应用注册表图标和更新标记，而不是过期的 .app 正文 URL。 Prefers the installed app registry icon and update flag over a stale .app body URL. */
+/** 只用 host 已安装应用图标，不读 .app 正文。 Uses only the host installed-app icon and never reads the .app body. */
 async function resolveInstalledAppMeta(
   path: string,
 ): Promise<{ iconUrl: string; hasUpdate: boolean }> {
@@ -123,18 +134,6 @@ function scheduleFileIconBodyRead(
   return () => {
     task.cancelled = true;
   };
-}
-
-function decodeReadResult(file: FileReadResult): string {
-  if (typeof file.body === "string") return file.body;
-  if (!file.bodyBase64) return "";
-  try {
-    return new TextDecoder().decode(
-      Uint8Array.from(atob(file.bodyBase64), (char) => char.charCodeAt(0)),
-    );
-  } catch {
-    return "";
-  }
 }
 
 function BlankFileIcon({ large = false }: { large?: boolean }) {
@@ -224,7 +223,6 @@ export function FileIcon({
     setAppIconUrl("");
     setAppIconFailed(false);
     let cancelled = false;
-    let cancelBodyRead: (() => void) | undefined;
     void resolveInstalledAppMeta(entry.path).then((meta) => {
       if (cancelled) return;
       setAppHasUpdate(meta.hasUpdate);
@@ -233,33 +231,11 @@ export function FileIcon({
         setAppIconUrl(meta.iconUrl);
         return;
       }
-      cancelBodyRead = scheduleFileIconBodyRead(
-        entry.path,
-        (file) => {
-          const appFile = parseAppKitsAppFile(decodeReadResult(file));
-          const nextUrl = (
-            appFile?.marketplaceIconUrl || appFile?.iconUrl
-          )?.trim() ?? "";
-          if (nextUrl) {
-            fileIconCache.set(cacheKey, { kind: "image", src: nextUrl });
-            setAppIconUrl(nextUrl);
-            setAppIconFailed(false);
-            return;
-          }
-          fileIconCache.set(cacheKey, { kind: "empty" });
-          setAppIconUrl("");
-          setAppIconFailed(false);
-        },
-        () => {
-          fileIconCache.set(cacheKey, { kind: "empty" });
-          setAppIconUrl("");
-          setAppIconFailed(false);
-        },
-      );
+      setAppIconUrl("");
+      setAppIconFailed(false);
     });
     return () => {
       cancelled = true;
-      cancelBodyRead?.();
     };
   }, [entry, type]);
 

@@ -732,6 +732,32 @@ function App() {
           void createFile(".html"),
         ),
       ]);
+    /**
+     * 打开系统 Terminal；默认 Computer isolate，可选 container isolate。
+     * Opens the system Terminal; default is Computer isolate, optional container isolate.
+     */
+    const openTerminal = (isolate?: "container") => {
+      void appkits.apps
+        .open("plugin:bash", isolate ? { isolate } : undefined)
+        .catch(() => {
+          notify(t(locale, "notify.openTerminalFailed"), "error");
+        });
+    };
+    /**
+     * 构造资源管理器里的 Terminal 与「容器里打开终端」两项。
+     * Builds the File Explorer Terminal and Open-Terminal-in-container actions.
+     */
+    const terminalItems = (): HostContextMenuItem[] => [
+      item("terminal", t(locale, "action.terminal"), "open", () =>
+        openTerminal(),
+      ),
+      item(
+        "terminal-container",
+        t(locale, "action.terminalContainer"),
+        "open",
+        () => openTerminal("container"),
+      ),
+    ];
     const openWithMenu = (
       entry: ExplorerEntry | undefined,
       openers: ShellFileOpenerSummary[],
@@ -765,6 +791,8 @@ function App() {
     const menuItems: Array<HostContextMenuItem | null> =
       menu.type === "background"
         ? [
+            ...terminalItems(),
+            separator("terminal-separator"),
             clipboard
               ? item(
                   "paste",
@@ -799,6 +827,7 @@ function App() {
                 { disabled: targetItems.length !== 1, shortcut: "Enter" },
               ),
               openWithMenu(targetItems[0], selectionOpeners, "selection"),
+              ...terminalItems(),
               separator("selection-open-separator"),
               item(
                 "copy",
@@ -854,6 +883,7 @@ function App() {
                 { shortcut: "Enter" },
               ),
               openWithMenu(menu.entry, entryOpeners, "entry"),
+              ...terminalItems(),
               separator("entry-open-separator"),
               item("copy", t(locale, "action.copy"), "copy", () => copyEntries("copy", targetItems), {
                 shortcut: "Ctrl+C",

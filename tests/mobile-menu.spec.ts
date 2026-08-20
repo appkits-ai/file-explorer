@@ -44,6 +44,10 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain("appkits.files.openers({");
     expect(source).toContain("function openEntryWithShell(");
     expect(source).toContain('"action.openWith"');
+    expect(source).toContain('"action.terminal"');
+    expect(source).toContain('"action.terminalContainer"');
+    expect(source).toContain('appkits.apps');
+    expect(source).toContain('open("plugin:bash"');
     expect(source).toContain("opener.id");
     expect(source).not.toContain("setStatus(`Opened ${entry.name}`)");
   });

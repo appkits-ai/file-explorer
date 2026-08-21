@@ -185,7 +185,7 @@ describe("File Explorer mobile menu contracts", () => {
     const refreshStart = source.indexOf(
       "const result = await appkits.files.list(targetDirectory);",
     );
-    const catchStart = source.indexOf("} catch {", refreshStart);
+    const catchStart = source.indexOf("} catch (error) {", refreshStart);
     const successPath = source.slice(refreshStart, catchStart);
 
     expect(successPath).toContain("const listedEntries = result.entries.map");
@@ -210,8 +210,12 @@ describe("File Explorer mobile menu contracts", () => {
     expect(refreshStart).toBeGreaterThan(-1);
     expect(ensureCall).toBeGreaterThan(refreshStart);
     expect(ensureCall).toBeLessThan(listCall);
-    expect(source).toContain("isProductHomeDirectory(targetDirectory)");
+    expect(source).not.toContain("isProductHomeDirectory(targetDirectory)");
     expect(source).toContain("appkits.files.mkdir(path)");
+    expect(source).toContain("isExplorerRefreshCancellation(");
+    expect(source).toContain(
+      'explorerNoticeKey(error, "notify.refreshFailed")',
+    );
   });
 
   it("paints local folder rows before Computer create and paste confirm", () => {
@@ -355,7 +359,7 @@ describe("File Explorer mobile menu contracts", () => {
     const refreshStart = source.indexOf(
       "const result = await appkits.files.list(targetDirectory);",
     );
-    const catchStart = source.indexOf("} catch {", refreshStart);
+    const catchStart = source.indexOf("} catch (error) {", refreshStart);
     const successPath = source.slice(refreshStart, catchStart);
 
     expect(source).toContain(

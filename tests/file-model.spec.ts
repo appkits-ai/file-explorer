@@ -2,7 +2,7 @@
  * 核对资源管理器路径模型与产品 Home 目录补齐。
  * Verifies File Explorer path model and product Home directory ensure.
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   HOME_ROOT,
   PRODUCT_HOME_DIRECTORIES,
@@ -14,8 +14,8 @@ import {
   createTargetPath,
   desktopFileIconName,
   ensureProductHomeDirectories,
-  filterVisibleEntries,
   fileTypeLabel,
+  filterVisibleEntries,
   isProductHomeDirectory,
   isTextPreviewable,
   localPendingEntry,
@@ -30,6 +30,7 @@ import {
   pathFromVisiblePath,
   planMoveTargets,
   removeDirectoryChildren,
+  resetProductHomeDirectoryEnsureForTests,
   sanitizeFilename,
   searchEntries,
   selectedPathFromLaunchParams,
@@ -48,6 +49,10 @@ const entries: ExplorerEntry[] = [
 ];
 
 describe("file explorer model", () => {
+  beforeEach(() => {
+    resetProductHomeDirectoryEnsureForTests();
+  });
+
   it("names the product Home directories desktop Locations present", () => {
     expect([...PRODUCT_HOME_DIRECTORIES]).toEqual([
       "/home/agent",
@@ -76,6 +81,23 @@ describe("file explorer model", () => {
       "/home/agent/Projects",
       "/home/agent/workspace",
     ]);
+  });
+
+  it("shares one product Home mkdir pass across overlapping ensure callers", async () => {
+    let mkdirCalls = 0;
+    const mkdir = async () => {
+      mkdirCalls += 1;
+    };
+    await Promise.all([
+      ensureProductHomeDirectories(mkdir),
+      ensureProductHomeDirectories(mkdir),
+      ensureProductHomeDirectories(mkdir),
+    ]);
+    expect(mkdirCalls).toBe(5);
+    await ensureProductHomeDirectories(async () => {
+      mkdirCalls += 1;
+    });
+    expect(mkdirCalls).toBe(5);
   });
 
   it("projects flat desktop entries into folder children", () => {

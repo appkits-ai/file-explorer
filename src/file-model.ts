@@ -178,11 +178,26 @@ export function isProductHomeDirectory(path: string): boolean {
   );
 }
 
+let productHomeDirectoryEnsure: Promise<void> | null = null;
+
 /**
- * 通过 SDK mkdir 补齐产品 Home 子目录；已存在或 writes_frozen 保持静默。
- * Creates missing product Home children via SDK mkdir; existing and writes_frozen stay silent.
+ * 通过 SDK mkdir 补齐产品 Home 子目录一次；并行调用共享同一次 mkdir，已存在或 writes_frozen 保持静默。
+ * Creates missing product Home children once via SDK mkdir; overlapping callers share that pass, and existing or writes_frozen stay silent.
  */
 export async function ensureProductHomeDirectories(
+  mkdir: (path: string) => Promise<unknown>,
+): Promise<void> {
+  if (!productHomeDirectoryEnsure) {
+    productHomeDirectoryEnsure = materializeProductHomeDirectories(mkdir);
+  }
+  return productHomeDirectoryEnsure;
+}
+
+/**
+ * 按产品 Home 子目录逐个 mkdir，单个失败不中断其余目录。
+ * Mkdirs each product Home child; one failure does not stop the remaining directories.
+ */
+async function materializeProductHomeDirectories(
   mkdir: (path: string) => Promise<unknown>,
 ): Promise<void> {
   for (const directory of PRODUCT_HOME_DIRECTORIES) {
@@ -193,6 +208,14 @@ export async function ensureProductHomeDirectories(
       // Directory may already exist, or Home writes may be frozen.
     }
   }
+}
+
+/**
+ * 测试隔离：丢掉已完成或进行中的产品 Home 补齐，让下一次 ensure 重新 mkdir。
+ * Test isolation: drops the in-flight or completed product Home ensure so the next call mkdirs again.
+ */
+export function resetProductHomeDirectoryEnsureForTests(): void {
+  productHomeDirectoryEnsure = null;
 }
 
 export function visiblePath(path: string): string {

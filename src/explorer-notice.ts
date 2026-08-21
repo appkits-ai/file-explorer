@@ -1,6 +1,6 @@
 /**
- * 把桌面文件桥接错误码映射到 File Explorer 已翻译文案。
- * Maps desktop file-bridge error codes onto File Explorer translated copy.
+ * 把桌面文件桥接错误码映射到 File Explorer 已翻译文案，并识别可忽略的刷新取消。
+ * Maps desktop file-bridge error codes onto File Explorer translated copy and ignored refresh cancellations.
  */
 import type { TranslationKey } from "./i18n";
 
@@ -40,4 +40,20 @@ export function explorerStatusKey(
   return explorerClientErrorCode(error) === WRITES_FROZEN
     ? "status.writesFrozen"
     : fallback;
+}
+
+/**
+ * 判断目录刷新失败是否只是取消或离开后的过期请求，不应向用户报错。
+ * Returns whether a directory refresh failed only as a cancelled or leftover request.
+ */
+export function isExplorerRefreshCancellation(
+  error: unknown,
+  stillViewingTarget: boolean,
+): boolean {
+  const name =
+    error && typeof error === "object" && "name" in error ? error.name : null;
+  const code = explorerClientErrorCode(error);
+  if (name === "AbortError") return true;
+  if (code === "aborted" || code === "request_aborted") return true;
+  return code === "request_timeout" && !stillViewingTarget;
 }

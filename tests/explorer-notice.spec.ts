@@ -1,12 +1,13 @@
 /**
- * 核对 File Explorer 把 writes_frozen 映射成诚实文案。
- * Verifies File Explorer maps writes_frozen onto the honest notice keys.
+ * 核对 File Explorer 把 writes_frozen 映射成诚实文案，并忽略可取消的刷新。
+ * Verifies File Explorer maps writes_frozen onto honest notice keys and ignores cancelled refreshes.
  */
 import { describe, expect, it } from "vitest";
 import {
   explorerClientErrorCode,
   explorerNoticeKey,
   explorerStatusKey,
+  isExplorerRefreshCancellation,
 } from "../src/explorer-notice";
 
 describe("explorer notice mapping", () => {
@@ -47,5 +48,26 @@ describe("explorer notice mapping", () => {
     expect(explorerStatusKey(frozen, "status.moveFailed")).toBe(
       "status.writesFrozen",
     );
+  });
+
+  it("ignores aborted refreshes and leftover request timeouts", () => {
+    expect(
+      isExplorerRefreshCancellation({ name: "AbortError" }, true),
+    ).toBe(true);
+    expect(
+      isExplorerRefreshCancellation({ code: "aborted" }, true),
+    ).toBe(true);
+    expect(
+      isExplorerRefreshCancellation({ code: "request_aborted" }, false),
+    ).toBe(true);
+    expect(
+      isExplorerRefreshCancellation({ code: "request_timeout" }, false),
+    ).toBe(true);
+    expect(
+      isExplorerRefreshCancellation({ code: "request_timeout" }, true),
+    ).toBe(false);
+    expect(
+      isExplorerRefreshCancellation({ code: "not_found" }, true),
+    ).toBe(false);
   });
 });

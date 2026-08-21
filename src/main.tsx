@@ -34,7 +34,6 @@ import {
   fileTypeKind,
   filenameFromPath,
   formatSize,
-  isProductHomeDirectory,
   isTextPreviewable,
   isTextInputTarget,
   joinPath,
@@ -67,7 +66,11 @@ import {
   type SelectionRect,
   type SelectionState,
 } from "./file-model";
-import { explorerNoticeKey, explorerStatusKey } from "./explorer-notice";
+import {
+  explorerNoticeKey,
+  explorerStatusKey,
+  isExplorerRefreshCancellation,
+} from "./explorer-notice";
 import { pluralSuffix, t, type TranslationKey } from "./i18n";
 import "./styles.css";
 
@@ -345,6 +348,10 @@ function App() {
     setPathEditorValue(displayPath(locale, currentPath));
   }, [currentPath, locale]);
 
+  /**
+   * 在产品 Home 补齐完成后再列出目录；取消或离开后的过期请求不报刷新失败。
+   * Lists a directory after the one-shot product Home ensure; cancelled or leftover requests do not toast refresh failure.
+   */
   const refresh = React.useCallback((directory = currentPathRef.current) => {
     const targetDirectory = normalizePath(directory);
     const pendingRefresh = refreshPromisesRef.current.get(targetDirectory);
@@ -361,11 +368,9 @@ function App() {
         }),
       );
       try {
-        if (isProductHomeDirectory(targetDirectory)) {
-          await ensureProductHomeDirectories((path) =>
-            appkits.files.mkdir(path),
-          );
-        }
+        await ensureProductHomeDirectories((path) =>
+          appkits.files.mkdir(path),
+        );
         const result = await appkits.files.list(targetDirectory);
         const listedEntries = result.entries.map((entry) => {
           const listed: ExplorerEntry = {
@@ -418,10 +423,21 @@ function App() {
             plural: pluralSuffix(locale, listedEntries.length),
           }),
         );
-      } catch {
-        notify(t(locale, "notify.refreshFailed"), "error");
+      } catch (error) {
+        if (
+          isExplorerRefreshCancellation(
+            error,
+            currentPathRef.current === targetDirectory,
+          )
+        ) {
+          return;
+        }
+        notify(
+          t(locale, explorerNoticeKey(error, "notify.refreshFailed")),
+          "error",
+        );
         setStatus(
-          t(locale, "status.refreshFailed", {
+          t(locale, explorerStatusKey(error, "status.refreshFailed"), {
             path: displayPath(locale, targetDirectory),
           }),
         );

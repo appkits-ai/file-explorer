@@ -1,3 +1,7 @@
+/**
+ * 核对 File Explorer 菜单、刷新与产品 Home 补齐的源码契约。
+ * Verifies File Explorer menu, refresh, and product Home ensure source contracts.
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -189,6 +193,25 @@ describe("File Explorer mobile menu contracts", () => {
     expect(successPath).toContain('t(locale, "status.folderItems"');
     expect(successPath).not.toContain("notify(");
     expect(successPath).not.toContain("status.refreshFailed");
+  });
+
+  it("materializes product Home directories before listing them", () => {
+    const source = readSource("src/main.tsx");
+    const refreshStart = source.indexOf("const refresh = React.useCallback");
+    const ensureCall = source.indexOf(
+      "ensureProductHomeDirectories(",
+      refreshStart,
+    );
+    const listCall = source.indexOf(
+      "await appkits.files.list(targetDirectory)",
+      refreshStart,
+    );
+
+    expect(refreshStart).toBeGreaterThan(-1);
+    expect(ensureCall).toBeGreaterThan(refreshStart);
+    expect(ensureCall).toBeLessThan(listCall);
+    expect(source).toContain("isProductHomeDirectory(targetDirectory)");
+    expect(source).toContain("appkits.files.mkdir(path)");
   });
 
   it("paints local folder rows before Computer create and paste confirm", () => {

@@ -155,6 +155,46 @@ export function normalizePath(path: string): string {
     : `${HOME_ROOT}/${trimmed.replace(/^\/+/, "")}`;
 }
 
+/**
+ * 桌面 Locations 与 Explorer 快捷方式展示的产品 Home 目录，含 Home 根。
+ * Product Home directories desktop Locations and Explorer shortcuts present, including Home root.
+ */
+export const PRODUCT_HOME_DIRECTORIES = [
+  HOME_ROOT,
+  `${HOME_ROOT}/Desktop`,
+  `${HOME_ROOT}/Apps`,
+  `${HOME_ROOT}/Downloads`,
+  `${HOME_ROOT}/Projects`,
+  `${HOME_ROOT}/workspace`,
+] as const;
+
+/**
+ * 判断路径是否属于产品 Home 目录集。
+ * Returns whether a path is one of the product Home directories.
+ */
+export function isProductHomeDirectory(path: string): boolean {
+  return (PRODUCT_HOME_DIRECTORIES as readonly string[]).includes(
+    normalizePath(path),
+  );
+}
+
+/**
+ * 通过 SDK mkdir 补齐产品 Home 子目录；已存在或 writes_frozen 保持静默。
+ * Creates missing product Home children via SDK mkdir; existing and writes_frozen stay silent.
+ */
+export async function ensureProductHomeDirectories(
+  mkdir: (path: string) => Promise<unknown>,
+): Promise<void> {
+  for (const directory of PRODUCT_HOME_DIRECTORIES) {
+    if (directory === HOME_ROOT) continue;
+    try {
+      await mkdir(directory);
+    } catch {
+      // Directory may already exist, or Home writes may be frozen.
+    }
+  }
+}
+
 export function visiblePath(path: string): string {
   const normalized = normalizePath(path);
   if (normalized === HOME_ROOT) return HOME_DISPLAY_NAME;

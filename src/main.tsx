@@ -29,10 +29,12 @@ import {
   buildLocationTree,
   childEntries,
   contextMenuItemIdFromSelection,
+  ensureProductHomeDirectories,
   filterVisibleEntries,
   fileTypeKind,
   filenameFromPath,
   formatSize,
+  isProductHomeDirectory,
   isTextPreviewable,
   isTextInputTarget,
   joinPath,
@@ -359,6 +361,11 @@ function App() {
         }),
       );
       try {
+        if (isProductHomeDirectory(targetDirectory)) {
+          await ensureProductHomeDirectories((path) =>
+            appkits.files.mkdir(path),
+          );
+        }
         const result = await appkits.files.list(targetDirectory);
         const listedEntries = result.entries.map((entry) => {
           const listed: ExplorerEntry = {
@@ -474,6 +481,10 @@ function App() {
       offLaunch();
       offLocale();
     };
+  }, []);
+
+  React.useEffect(() => {
+    void ensureProductHomeDirectories((path) => appkits.files.mkdir(path));
   }, []);
 
   React.useEffect(() => {

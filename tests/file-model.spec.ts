@@ -1,6 +1,11 @@
+/**
+ * 核对资源管理器路径模型与产品 Home 目录补齐。
+ * Verifies File Explorer path model and product Home directory ensure.
+ */
 import { describe, expect, it } from "vitest";
 import {
   HOME_ROOT,
+  PRODUCT_HOME_DIRECTORIES,
   breadcrumbSegments,
   buildDirectoryTree,
   buildLocationTree,
@@ -8,8 +13,10 @@ import {
   contextMenuItemIdFromSelection,
   createTargetPath,
   desktopFileIconName,
+  ensureProductHomeDirectories,
   filterVisibleEntries,
   fileTypeLabel,
+  isProductHomeDirectory,
   isTextPreviewable,
   localPendingEntry,
   mergeDirectoryListing,
@@ -41,6 +48,36 @@ const entries: ExplorerEntry[] = [
 ];
 
 describe("file explorer model", () => {
+  it("names the product Home directories desktop Locations present", () => {
+    expect([...PRODUCT_HOME_DIRECTORIES]).toEqual([
+      "/home/agent",
+      "/home/agent/Desktop",
+      "/home/agent/Apps",
+      "/home/agent/Downloads",
+      "/home/agent/Projects",
+      "/home/agent/workspace",
+    ]);
+    expect(isProductHomeDirectory("/home/agent/Apps/")).toBe(true);
+    expect(isProductHomeDirectory("/home/agent/Documents")).toBe(false);
+  });
+
+  it("mkdirs product Home children and keeps ensure failures silent", async () => {
+    const created: string[] = [];
+    await ensureProductHomeDirectories(async (path) => {
+      created.push(path);
+      if (path.endsWith("/Downloads")) {
+        throw new Error("writes_frozen");
+      }
+    });
+    expect(created).toEqual([
+      "/home/agent/Desktop",
+      "/home/agent/Apps",
+      "/home/agent/Downloads",
+      "/home/agent/Projects",
+      "/home/agent/workspace",
+    ]);
+  });
+
   it("projects flat desktop entries into folder children", () => {
     expect(childEntries(entries, HOME_ROOT).map((entry) => entry.name)).toEqual([
       "project",

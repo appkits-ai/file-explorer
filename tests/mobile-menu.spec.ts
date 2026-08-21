@@ -243,6 +243,13 @@ describe("File Explorer mobile menu contracts", () => {
       pasteInto.indexOf("await copyDirectory"),
     );
     expect(pasteInto).toContain("removeDirectoryChildren(");
+    expect(pasteInto).toContain(
+      "...planned.map(({ entry }) => parentPath(entry.path))",
+    );
+    expect(pasteInto).toContain(
+      "await Promise.all([...refreshTargets].map((path) => refresh(path)))",
+    );
+    expect(pasteInto).not.toMatch(/await refresh\(\);/);
     expect(finishRename).toContain(
       'explorerNoticeKey(error, "notify.renameFailed")',
     );

@@ -1338,6 +1338,10 @@ function App() {
     );
   }
 
+  /**
+   * 把剪贴板条目粘贴到目标目录；剪切时同时刷新源父目录，避免返回时仍显示旧行。
+   * Pastes clipboard entries into the target directory; cut also refreshes source parents so going back does not keep stale rows.
+   */
   async function pasteInto(targetDirectory: string) {
     if (!clipboard) return;
     let working = entriesRef.current;
@@ -1373,7 +1377,12 @@ function App() {
         if (clipboard.mode === "cut") await appkits.files.delete(entry.path);
       }
       if (clipboard.mode === "cut") setClipboard(null);
-      await refresh();
+      const refreshTargets = new Set([
+        currentPathRef.current,
+        normalizePath(targetDirectory),
+        ...planned.map(({ entry }) => parentPath(entry.path)),
+      ]);
+      await Promise.all([...refreshTargets].map((path) => refresh(path)));
       setStatus(t(locale, "status.pasteComplete"));
     } catch (error) {
       setEntries((current) =>

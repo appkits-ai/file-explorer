@@ -1,0 +1,39 @@
+/**
+ * 核对 File Explorer 把 writes_frozen 映射成诚实文案。
+ * Verifies File Explorer maps writes_frozen onto the honest notice keys.
+ */
+import { describe, expect, it } from "vitest";
+import {
+  explorerClientErrorCode,
+  explorerNoticeKey,
+  explorerStatusKey,
+} from "../src/explorer-notice";
+
+describe("explorer notice mapping", () => {
+  it("reads a desktop client error code", () => {
+    expect(
+      explorerClientErrorCode({
+        code: "writes_frozen",
+        message: "workspace writes are frozen for the Computer writer",
+      }),
+    ).toBe("writes_frozen");
+    expect(explorerClientErrorCode(new Error("fail"))).toBeNull();
+    expect(explorerClientErrorCode("writes_frozen")).toBeNull();
+  });
+
+  it("uses the frozen-writer copy only for writes_frozen", () => {
+    const frozen = { code: "writes_frozen", message: "frozen" };
+    expect(explorerNoticeKey(frozen, "notify.createFailed")).toBe(
+      "notify.writesFrozen",
+    );
+    expect(explorerStatusKey(frozen, "status.createFailed")).toBe(
+      "status.writesFrozen",
+    );
+    expect(
+      explorerNoticeKey({ code: "path_escape" }, "notify.createFailed"),
+    ).toBe("notify.createFailed");
+    expect(explorerNoticeKey(new Error("fail"), "notify.pasteFailed")).toBe(
+      "notify.pasteFailed",
+    );
+  });
+});

@@ -1,3 +1,7 @@
+/**
+ * 拥有 File Explorer 中英对照文案。
+ * Owns File Explorer English and Chinese copy.
+ */
 const en = {
   "action.cancel": "Cancel",
   "action.copy": "Copy",
@@ -68,8 +72,10 @@ const en = {
   "notify.openWithFailed": "Could not open file with this app",
   "notify.pasteFailed": "Could not paste into this folder",
   "notify.refreshFailed": "Could not refresh folder",
+  "notify.uploadFailed": "Could not upload files",
   "notify.uploadMany": "{count} uploads complete",
   "notify.uploadOne": "Upload complete",
+  "notify.writesFrozen": "Home writes are frozen while a Computer app is running",
   "pane.details": "Details",
   "pane.locations": "Locations",
   "path.home": "/home/agent",
@@ -96,6 +102,8 @@ const en = {
   "status.selected": "{count} selected",
   "status.selectedMany": "{count} items selected",
   "status.selectItemsToDelete": "Select items to delete",
+  "status.uploadFailed": "Upload failed",
+  "status.writesFrozen": "Home writes are frozen while a Computer app is running",
   "toolbar.copy": "Copy",
   "toolbar.cut": "Cut",
   "toolbar.delete": "Delete",
@@ -187,8 +195,10 @@ const zh: Record<TranslationKey, string> = {
   "notify.openWithFailed": "无法用此应用打开文件",
   "notify.pasteFailed": "无法粘贴到此文件夹",
   "notify.refreshFailed": "无法刷新文件夹",
+  "notify.uploadFailed": "无法上传文件",
   "notify.uploadMany": "{count} 个文件上传完成",
   "notify.uploadOne": "上传完成",
+  "notify.writesFrozen": "Computer 应用正在运行，主目录写入已冻结",
   "pane.details": "详情",
   "pane.locations": "位置",
   "path.home": "/home/agent",
@@ -215,6 +225,8 @@ const zh: Record<TranslationKey, string> = {
   "status.selected": "已选择 {count} 个",
   "status.selectedMany": "已选择 {count} 个项目",
   "status.selectItemsToDelete": "请选择要删除的项目",
+  "status.uploadFailed": "上传失败",
+  "status.writesFrozen": "Computer 应用正在运行，主目录写入已冻结",
   "toolbar.copy": "复制",
   "toolbar.cut": "剪切",
   "toolbar.delete": "删除",
@@ -236,10 +248,12 @@ const zh: Record<TranslationKey, string> = {
 
 export type LocaleCode = "en" | "zh";
 
+/** 把宿主 locale 收成 en 或 zh。 Narrows the host locale to en or zh. */
 export function localeCode(locale: string | undefined): LocaleCode {
   return String(locale || "").toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
+/** 用当前 locale 渲染一条资源键。 Renders one resource key in the active locale. */
 export function t(
   locale: string | undefined,
   key: TranslationKey,
@@ -252,6 +266,7 @@ export function t(
   });
 }
 
+/** 英文复数后缀；中文不加。 English plural suffix; Chinese stays empty. */
 export function pluralSuffix(locale: string | undefined, count: number): string {
   return localeCode(locale) === "zh" || count === 1 ? "" : "s";
 }

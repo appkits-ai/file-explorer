@@ -1,3 +1,7 @@
+/**
+ * 拥有 File Explorer 插件窗口：浏览并变更 Computer/DOFS 主目录。
+ * Owns the File Explorer plugin window: browse and mutate Computer/DOFS home.
+ */
 import React from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -60,6 +64,7 @@ import {
   type SelectionRect,
   type SelectionState,
 } from "./file-model";
+import { explorerNoticeKey, explorerStatusKey } from "./explorer-notice";
 import { pluralSuffix, t, type TranslationKey } from "./i18n";
 import "./styles.css";
 
@@ -1233,9 +1238,9 @@ function App() {
         await refresh();
         setSingleSelection(target.path);
         setStatus(pending.kind === "directory" ? t(locale, "status.folderCreated") : t(locale, "status.fileCreated"));
-      } catch {
-        notify(t(locale, "notify.createFailed"), "error");
-        setStatus(t(locale, "status.createFailed"));
+      } catch (error) {
+        notify(t(locale, explorerNoticeKey(error, "notify.createFailed")), "error");
+        setStatus(t(locale, explorerStatusKey(error, "status.createFailed")));
       } finally {
         pendingCreateCommitRef.current = false;
       }
@@ -1270,9 +1275,9 @@ function App() {
       setActivePath(null);
       await refresh();
       notify(t(locale, items.length === 1 ? "notify.deletedOne" : "notify.deletedMany"), "success");
-    } catch {
-      notify(t(locale, "notify.deleteFailed"), "error");
-      setStatus(t(locale, "status.deleteFailed"));
+    } catch (error) {
+      notify(t(locale, explorerNoticeKey(error, "notify.deleteFailed")), "error");
+      setStatus(t(locale, explorerStatusKey(error, "status.deleteFailed")));
     }
   }
 
@@ -1324,9 +1329,9 @@ function App() {
       if (clipboard.mode === "cut") setClipboard(null);
       await refresh();
       setStatus(t(locale, "status.pasteComplete"));
-    } catch {
-      notify(t(locale, "notify.pasteFailed"), "error");
-      setStatus(t(locale, "status.pasteFailed"));
+    } catch (error) {
+      notify(t(locale, explorerNoticeKey(error, "notify.pasteFailed")), "error");
+      setStatus(t(locale, explorerStatusKey(error, "status.pasteFailed")));
     }
   }
 
@@ -1392,9 +1397,13 @@ function App() {
       await Promise.all([...refreshTargets].map((path) => refresh(path)));
       setSingleSelection(targets[targets.length - 1]?.toPath || null);
       setStatus(t(locale, "status.pasteComplete"));
-    } catch {
-      notify(t(locale, "notify.refreshFailed"), "error");
-      setStatus(t(locale, "status.refreshFailed", { path: displayPath(locale, targetDirectory) }));
+    } catch (error) {
+      notify(t(locale, explorerNoticeKey(error, "notify.refreshFailed")), "error");
+      setStatus(
+        t(locale, explorerStatusKey(error, "status.refreshFailed"), {
+          path: displayPath(locale, targetDirectory),
+        }),
+      );
     }
     return true;
   }
@@ -1442,22 +1451,27 @@ function App() {
       files.map((file) => file.name),
       replace,
     );
-    for (const [index, file] of files.entries()) {
-      const target = targets[index]?.path || joinPath(targetDirectory, sanitizeFilename(file.name) || "upload.bin");
-      await appkits.files.write({
-        path: target,
-        bodyBase64: await fileToBase64(file),
-        contentType: file.type || "application/octet-stream",
-      });
+    try {
+      for (const [index, file] of files.entries()) {
+        const target = targets[index]?.path || joinPath(targetDirectory, sanitizeFilename(file.name) || "upload.bin");
+        await appkits.files.write({
+          path: target,
+          bodyBase64: await fileToBase64(file),
+          contentType: file.type || "application/octet-stream",
+        });
+      }
+      setPendingUpload(null);
+      await refresh();
+      notify(
+        files.length === 1
+          ? t(locale, "notify.uploadOne")
+          : t(locale, "notify.uploadMany", { count: files.length }),
+        "success",
+      );
+    } catch (error) {
+      notify(t(locale, explorerNoticeKey(error, "notify.uploadFailed")), "error");
+      setStatus(t(locale, explorerStatusKey(error, "status.uploadFailed")));
     }
-    setPendingUpload(null);
-    await refresh();
-    notify(
-      files.length === 1
-        ? t(locale, "notify.uploadOne")
-        : t(locale, "notify.uploadMany", { count: files.length }),
-      "success",
-    );
   }
 
   function requestUpload(targetDirectory = currentPathRef.current) {

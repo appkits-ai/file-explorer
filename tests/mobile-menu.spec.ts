@@ -208,10 +208,14 @@ describe("File Explorer mobile menu contracts", () => {
     expect(finishRename.indexOf("upsertDirectoryChild")).toBeLessThan(
       finishRename.indexOf("await appkits.files.mkdir"),
     );
+    expect(finishRename).toContain(
+      "removeDirectoryChildren(current, pending.directory, [failedPath])",
+    );
     expect(pasteInto).toContain("setEntries(working)");
     expect(pasteInto.indexOf("setEntries(working)")).toBeLessThan(
       pasteInto.indexOf("await copyDirectory"),
     );
+    expect(pasteInto).toContain("removeDirectoryChildren(");
     expect(finishRename).toContain(
       'explorerNoticeKey(error, "notify.renameFailed")',
     );

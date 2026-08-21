@@ -48,6 +48,7 @@ import {
   persistDirectoryListing,
   planMoveTargets,
   readPersistedDirectoryListing,
+  removeDirectoryChildren,
   rectsIntersect,
   sanitizeFilename,
   searchEntries,
@@ -1188,8 +1189,8 @@ function App() {
   }
 
   /**
-   * 提交新建或重命名；写入失败时走诚实文案，不留下未处理拒绝。
-   * Commits create or rename. Write failures use honest copy; no unhandled rejection.
+   * 提交新建或重命名；写入失败时走诚实文案，并撤回未确认的乐观行。
+   * Commits create or rename. Write failures use honest copy and drop unconfirmed optimistic rows.
    */
   async function finishRename(commit: boolean) {
     const pending = pendingCreate;
@@ -1197,6 +1198,7 @@ function App() {
       if (pendingCreateCommitRef.current) return;
       pendingCreateCommitRef.current = true;
       setRenamingPath(null);
+      let createdPath: string | null = null;
       try {
         if (!commit) {
           setPendingCreate(null);
@@ -1225,6 +1227,7 @@ function App() {
           target.name,
           pending.kind === "file" ? TEXT_FILE_TYPE[extension] : undefined,
         );
+        createdPath = target.path;
         setEntries((current) =>
           upsertDirectoryChild(current, pending.directory, optimistic),
         );
@@ -1243,6 +1246,13 @@ function App() {
         setSingleSelection(target.path);
         setStatus(pending.kind === "directory" ? t(locale, "status.folderCreated") : t(locale, "status.fileCreated"));
       } catch (error) {
+        if (createdPath) {
+          const failedPath = createdPath;
+          setEntries((current) =>
+            removeDirectoryChildren(current, pending.directory, [failedPath]),
+          );
+          setSingleSelection(null);
+        }
         notify(t(locale, explorerNoticeKey(error, "notify.createFailed")), "error");
         setStatus(t(locale, explorerStatusKey(error, "status.createFailed")));
       } finally {
@@ -1339,6 +1349,13 @@ function App() {
       await refresh();
       setStatus(t(locale, "status.pasteComplete"));
     } catch (error) {
+      setEntries((current) =>
+        removeDirectoryChildren(
+          current,
+          targetDirectory,
+          planned.map((item) => item.target),
+        ),
+      );
       notify(t(locale, explorerNoticeKey(error, "notify.pasteFailed")), "error");
       setStatus(t(locale, explorerStatusKey(error, "status.pasteFailed")));
     }

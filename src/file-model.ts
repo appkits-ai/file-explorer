@@ -273,7 +273,10 @@ export function mergeDirectoryListing(
   );
 }
 
-/** Builds a local-first folder row shown before Computer confirms the mutation. */
+/**
+ * 在 Computer 确认变更前画出本地先行行。
+ * Builds a local-first folder row shown before Computer confirms the mutation.
+ */
 export function localPendingEntry(
   path: string,
   kind: "file" | "directory",
@@ -291,7 +294,10 @@ export function localPendingEntry(
   };
 }
 
-/** Inserts one child into a directory listing without dropping siblings. */
+/**
+ * 把一个子项插入目录列表，不丢掉同级项。
+ * Inserts one child into a directory listing without dropping siblings.
+ */
 export function upsertDirectoryChild(
   entries: ExplorerEntry[],
   directory: string,
@@ -304,6 +310,25 @@ export function upsertDirectoryChild(
     ...siblings.filter((item) => item.path !== next.path),
     next,
   ]);
+}
+
+/**
+ * 从目录列表去掉 Computer 未确认的子项，不丢掉同级项。
+ * Drops children Computer did not confirm without dropping siblings.
+ */
+export function removeDirectoryChildren(
+  entries: ExplorerEntry[],
+  directory: string,
+  paths: readonly string[],
+): ExplorerEntry[] {
+  const root = normalizePath(directory);
+  const drop = new Set(paths.map((path) => normalizePath(path)));
+  const siblings = entries.filter((item) => parentPath(item.path) === root);
+  return mergeDirectoryListing(
+    entries,
+    root,
+    siblings.filter((item) => !drop.has(item.path)),
+  );
 }
 
 export function buildDirectoryTree(

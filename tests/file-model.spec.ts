@@ -22,6 +22,7 @@ import {
   pathFromLaunchParams,
   pathFromVisiblePath,
   planMoveTargets,
+  removeDirectoryChildren,
   sanitizeFilename,
   searchEntries,
   selectedPathFromLaunchParams,
@@ -85,6 +86,27 @@ describe("file explorer model", () => {
       temporary: true,
       contentType: "text/plain",
     });
+    expect(childEntries(next, "/home/agent/project").map((entry) => entry.name)).toEqual([
+      "a.txt",
+    ]);
+  });
+
+  it("drops unconfirmed children without dropping siblings", () => {
+    const next = removeDirectoryChildren(
+      upsertDirectoryChild(
+        entries,
+        HOME_ROOT,
+        localPendingEntry("/home/agent/Untitled.txt", "file", "Untitled.txt", "text/plain"),
+      ),
+      HOME_ROOT,
+      ["/home/agent/Untitled.txt"],
+    );
+
+    expect(childEntries(next, HOME_ROOT).map((entry) => entry.name)).toEqual([
+      "project",
+      "readme.md",
+    ]);
+    expect(next.some((entry) => entry.path === "/home/agent/Untitled.txt")).toBe(false);
     expect(childEntries(next, "/home/agent/project").map((entry) => entry.name)).toEqual([
       "a.txt",
     ]);

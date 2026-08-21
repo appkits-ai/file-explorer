@@ -1187,6 +1187,10 @@ function App() {
     setRenamingPath(entry.path);
   }
 
+  /**
+   * 提交新建或重命名；写入失败时走诚实文案，不留下未处理拒绝。
+   * Commits create or rename. Write failures use honest copy; no unhandled rejection.
+   */
   async function finishRename(commit: boolean) {
     const pending = pendingCreate;
     if (pending) {
@@ -1252,10 +1256,15 @@ function App() {
     setRenamingPath(null);
     if (!commit || !entry || !nextName || nextName === entry.name) return;
     const target = joinPath(parentPath(entry.path), nextName);
-    await appkits.files.move(entry.path, target);
-    await refresh();
-    setSingleSelection(target);
-    setStatus(t(locale, "status.itemRenamed"));
+    try {
+      await appkits.files.move(entry.path, target);
+      await refresh();
+      setSingleSelection(target);
+      setStatus(t(locale, "status.itemRenamed"));
+    } catch (error) {
+      notify(t(locale, explorerNoticeKey(error, "notify.renameFailed")), "error");
+      setStatus(t(locale, explorerStatusKey(error, "status.renameFailed")));
+    }
   }
 
   async function deleteEntries(items: ExplorerEntry[]) {
@@ -1371,6 +1380,10 @@ function App() {
     );
   }
 
+  /**
+   * 把内部拖放条目移到目标目录，并把冻结写入映射成诚实文案。
+   * Moves internally dragged entries into the target directory and maps frozen writes to honest copy.
+   */
   async function moveDroppedEntries(
     event: React.DragEvent,
     targetDirectory: string,
@@ -1398,12 +1411,8 @@ function App() {
       setSingleSelection(targets[targets.length - 1]?.toPath || null);
       setStatus(t(locale, "status.pasteComplete"));
     } catch (error) {
-      notify(t(locale, explorerNoticeKey(error, "notify.refreshFailed")), "error");
-      setStatus(
-        t(locale, explorerStatusKey(error, "status.refreshFailed"), {
-          path: displayPath(locale, targetDirectory),
-        }),
-      );
+      notify(t(locale, explorerNoticeKey(error, "notify.moveFailed")), "error");
+      setStatus(t(locale, explorerStatusKey(error, "status.moveFailed")));
     }
     return true;
   }

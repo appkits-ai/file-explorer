@@ -212,6 +212,24 @@ describe("File Explorer mobile menu contracts", () => {
     expect(pasteInto.indexOf("setEntries(working)")).toBeLessThan(
       pasteInto.indexOf("await copyDirectory"),
     );
+    expect(finishRename).toContain(
+      'explorerNoticeKey(error, "notify.renameFailed")',
+    );
+    expect(finishRename).toContain("await appkits.files.move(entry.path, target)");
+  });
+
+  it("maps rename and drag-move failures through writes_frozen honesty", () => {
+    const source = readSource("src/main.tsx");
+    const moveDropped = source.slice(
+      source.indexOf("async function moveDroppedEntries"),
+      source.indexOf("async function copyDirectory"),
+    );
+
+    expect(moveDropped).toContain(
+      'explorerNoticeKey(error, "notify.moveFailed")',
+    );
+    expect(moveDropped).not.toContain("notify.refreshFailed");
+    expect(moveDropped).not.toContain("status.refreshFailed");
   });
 
   it("uses localized UI strings and shared desktop file icon ids", () => {

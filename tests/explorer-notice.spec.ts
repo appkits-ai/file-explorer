@@ -35,5 +35,17 @@ describe("explorer notice mapping", () => {
     expect(explorerNoticeKey(new Error("fail"), "notify.pasteFailed")).toBe(
       "notify.pasteFailed",
     );
+    expect(explorerNoticeKey(frozen, "notify.renameFailed")).toBe(
+      "notify.writesFrozen",
+    );
+    expect(explorerNoticeKey(frozen, "notify.moveFailed")).toBe(
+      "notify.writesFrozen",
+    );
+    expect(explorerStatusKey(frozen, "status.renameFailed")).toBe(
+      "status.writesFrozen",
+    );
+    expect(explorerStatusKey(frozen, "status.moveFailed")).toBe(
+      "status.writesFrozen",
+    );
   });
 });

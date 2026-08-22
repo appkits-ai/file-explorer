@@ -195,6 +195,22 @@ function displayPath(locale: string | undefined, path: string): string {
   return visiblePath(path);
 }
 
+/**
+ * 用目录列表生成状态栏「N items in path」文案。
+ * Builds the folder status copy from a directory listing.
+ */
+function folderItemsStatus(
+  locale: string,
+  directory: string,
+  listing: readonly ExplorerEntry[],
+): string {
+  return t(locale, "status.folderItems", {
+    count: listing.length,
+    path: displayPath(locale, directory),
+    plural: pluralSuffix(locale, listing.length),
+  });
+}
+
 
 function pathFromDisplayPath(locale: string | undefined, path: string): string {
   const trimmed = path.trim();
@@ -416,13 +432,7 @@ function App() {
           next.add(targetDirectory);
           return next;
         });
-        setStatus(
-          t(locale, "status.folderItems", {
-            count: listedEntries.length,
-            path: displayPath(locale, targetDirectory),
-            plural: pluralSuffix(locale, listedEntries.length),
-          }),
-        );
+        setStatus(folderItemsStatus(locale, targetDirectory, listedEntries));
       } catch (error) {
         if (
           isExplorerRefreshCancellation(
@@ -1036,6 +1046,10 @@ function App() {
     });
   }
 
+  /**
+   * 进入目录；已缓存列表时立刻改状态栏，避免面包屑返回仍显示上一层文案。
+   * Enters a directory; a cached listing updates the status bar immediately so breadcrumb return does not keep the previous folder copy.
+   */
   function navigate(path: string) {
     const next = normalizePath(path);
     setPendingCreate(null);
@@ -1045,6 +1059,15 @@ function App() {
     setSelectedPaths([]);
     setActivePath(null);
     void appkits.contextMenu.close().catch(() => undefined);
+    if (loadedDirectoriesRef.current.has(next)) {
+      setStatus(
+        folderItemsStatus(
+          locale,
+          next,
+          childEntries(entriesRef.current, next, { showHiddenFiles: true }),
+        ),
+      );
+    }
   }
 
   function setSingleSelection(path: string | null) {

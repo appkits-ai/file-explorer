@@ -190,9 +190,27 @@ describe("File Explorer mobile menu contracts", () => {
 
     expect(successPath).toContain("const listedEntries = result.entries.map");
     expect(successPath).toContain("next.add(targetDirectory)");
-    expect(successPath).toContain('t(locale, "status.folderItems"');
+    expect(successPath).toContain(
+      "folderItemsStatus(locale, targetDirectory, listedEntries)",
+    );
     expect(successPath).not.toContain("notify(");
     expect(successPath).not.toContain("status.refreshFailed");
+  });
+
+  it("updates folder status when navigating to an already-loaded directory", () => {
+    const source = readSource("src/main.tsx");
+    const navigateStart = source.indexOf("function navigate(path: string)");
+    const navigateEnd = source.indexOf(
+      "function setSingleSelection",
+      navigateStart,
+    );
+    const navigate = source.slice(navigateStart, navigateEnd);
+
+    expect(navigateStart).toBeGreaterThan(-1);
+    expect(navigate).toContain("loadedDirectoriesRef.current.has(next)");
+    expect(navigate).toContain("folderItemsStatus(");
+    expect(navigate).toContain("childEntries(entriesRef.current, next");
+    expect(source).toContain('t(locale, "status.folderItems"');
   });
 
   it("materializes product Home directories before listing them", () => {

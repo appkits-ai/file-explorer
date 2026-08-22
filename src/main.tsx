@@ -1833,9 +1833,12 @@ function App() {
     >
       <input
         ref={uploadRef}
+        id="explorer-upload"
+        name="explorer-upload"
         type="file"
         multiple
         className="file-picker"
+        aria-label={t(locale, "action.uploadFiles")}
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files || []);
           event.currentTarget.value = "";
@@ -1898,6 +1901,9 @@ function App() {
         {pathEditing ? (
           <input
             ref={pathInputRef}
+            id="explorer-path"
+            name="explorer-path"
+            aria-label={t(locale, "details.path")}
             value={pathEditorValue}
             onChange={(event) => setPathEditorValue(event.target.value)}
             onBlur={commitPathEditor}
@@ -2051,6 +2057,9 @@ function App() {
                     {renamingPath === entry.path ? (
                       <input
                         ref={renameInputRef}
+                        id="explorer-rename"
+                        name="explorer-rename"
+                        aria-label={t(locale, "action.rename")}
                         value={renameValue}
                         onChange={(event) => setRenameValue(event.target.value)}
                         onClick={(event) => event.stopPropagation()}

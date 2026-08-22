@@ -148,6 +148,15 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain("requestUpload(menu.targetDirectory)");
     expect(source).toContain("onClick={() => requestUpload(currentPath)}");
     expect(source).toContain('className="file-picker"');
+    expect(source).toContain('id="explorer-upload"');
+    expect(source).toContain('name="explorer-upload"');
+    expect(source).toContain('aria-label={t(locale, "action.uploadFiles")}');
+    expect(source).toContain('id="explorer-path"');
+    expect(source).toContain('name="explorer-path"');
+    expect(source).toContain('aria-label={t(locale, "details.path")}');
+    expect(source).toContain('id="explorer-rename"');
+    expect(source).toContain('name="explorer-rename"');
+    expect(source).toContain('aria-label={t(locale, "action.rename")}');
     expect(source).not.toContain("\n        hidden\n");
   });
 

@@ -316,6 +316,25 @@ describe("file explorer model", () => {
       "/home/agent/Desktop/readme.md",
     ]);
     expect(searchEntries(mixed, "/home/agent/project", "read")).toEqual([]);
+    expect(
+      searchEntries(
+        [
+          ...mixed,
+          {
+            path: "/home/agent/qa-858-cold/note.txt",
+            name: "note.txt",
+            kind: "file",
+          },
+          {
+            path: "/home/agent/Desktop/qa-858-desk.txt",
+            name: "qa-858-desk.txt",
+            kind: "file",
+          },
+        ],
+        "/home/agent/Downloads",
+        "qa-858",
+      ),
+    ).toEqual([]);
   });
 
   it("creates conflict-safe target names", () => {

@@ -459,6 +459,10 @@ export function buildLocationTree(
   };
 }
 
+/**
+ * 在当前目录子树内按名称搜索；已缓存的其它文件夹不进入结果。
+ * Searches names inside the current directory tree; other cached folders stay out.
+ */
 export function searchEntries(
   entries: ExplorerEntry[],
   directory: string,
@@ -468,8 +472,14 @@ export function searchEntries(
   const root = normalizePath(directory);
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return childEntries(entries, directory, options);
+  const prefix = `${root}/`;
   return entriesForVisibility(entries, options)
-    .filter((entry) => entry.path !== root && entry.name.toLowerCase().includes(trimmed))
+    .filter((entry) => {
+      const path = normalizePath(entry.path);
+      return (
+        path.startsWith(prefix) && entry.name.toLowerCase().includes(trimmed)
+      );
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

@@ -211,6 +211,17 @@ function folderItemsStatus(
   });
 }
 
+/**
+ * 用当前文件夹搜索结果生成状态栏匹配计数。
+ * Builds the status copy from the current folder search matches.
+ */
+function searchItemsStatus(locale: string, listing: readonly ExplorerEntry[]): string {
+  return t(locale, "status.searchItems", {
+    count: listing.length,
+    plural: pluralSuffix(locale, listing.length),
+  });
+}
+
 
 function pathFromDisplayPath(locale: string | undefined, path: string): string {
   const trimmed = path.trim();
@@ -1069,6 +1080,7 @@ function App() {
     const next = normalizePath(path);
     setPendingCreate(null);
     setRenamingPath(null);
+    setQuery("");
     markDirectoryLoading(next);
     setCurrentPath(next);
     setSelectedPaths([]);
@@ -1085,6 +1097,33 @@ function App() {
         ),
       );
     }
+  }
+
+  /**
+   * 搜索只作用于当前目录子树，并让状态栏显示匹配数而不是整夹项目数。
+   * Searches only the current directory tree and shows the match count instead of the folder item count.
+   */
+  function setSearchQuery(next: string) {
+    setQuery(next);
+    if (next.trim()) {
+      setStatus(
+        searchItemsStatus(
+          locale,
+          searchEntries(visibleWorkspaceEntries, currentPath, next, {
+            showHiddenFiles,
+          }),
+        ),
+      );
+      return;
+    }
+    if (!loadedDirectoriesRef.current.has(currentPathRef.current)) return;
+    setStatus(
+      folderItemsStatus(
+        locale,
+        currentPath,
+        childEntries(entriesRef.current, currentPath, { showHiddenFiles }),
+      ),
+    );
   }
 
   /**
@@ -1843,9 +1882,15 @@ function App() {
             <Images size={17} />
           </ToolbarButton>
         </div>
-        <label className="search">
+        <label className="search" htmlFor="explorer-search">
           <Search size={15} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t(locale, "placeholder.search")} />
+          <input
+            id="explorer-search"
+            name="explorer-search"
+            value={query}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={t(locale, "placeholder.search")}
+          />
         </label>
       </header>
 

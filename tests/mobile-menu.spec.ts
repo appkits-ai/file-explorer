@@ -212,13 +212,19 @@ describe("File Explorer mobile menu contracts", () => {
 
     expect(navigateStart).toBeGreaterThan(-1);
     expect(navigate).toContain("loadedDirectoriesRef.current.has(next)");
+    expect(navigate).toContain('setQuery("")');
     expect(navigate).toContain("folderItemsStatus(");
     expect(navigate).toContain("childEntries(entriesRef.current, next");
     expect(navigate).toContain("showHiddenFiles: showHiddenFilesRef.current");
     expect(navigate).not.toContain("showHiddenFiles: true");
     expect(source).toContain('t(locale, "status.folderItems"');
+    expect(source).toContain('t(locale, "status.searchItems"');
     expect(source).toContain("function setHiddenFilesVisible(next: boolean)");
     expect(source).toContain("setHiddenFilesVisible(!showHiddenFiles)");
+    expect(source).toContain("function setSearchQuery(next: string)");
+    expect(source).toContain("id=\"explorer-search\"");
+    expect(source).toContain("name=\"explorer-search\"");
+    expect(source).toContain("setSearchQuery(event.target.value)");
   });
 
   it("materializes product Home directories before listing them", () => {

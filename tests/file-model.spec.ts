@@ -303,10 +303,19 @@ describe("file explorer model", () => {
     ).toEqual([".internal.json", "container-write.txt"]);
   });
 
-  it("filters search across the workspace", () => {
-    expect(searchEntries(entries, HOME_ROOT, "read").map((entry) => entry.name)).toEqual([
-      "readme.md",
+  it("filters search to descendants of the current folder", () => {
+    const mixed: ExplorerEntry[] = [
+      ...entries,
+      { path: "/home/agent/Desktop/readme.md", name: "readme.md", kind: "file" },
+    ];
+    expect(searchEntries(mixed, HOME_ROOT, "read").map((entry) => entry.path)).toEqual([
+      "/home/agent/readme.md",
+      "/home/agent/Desktop/readme.md",
     ]);
+    expect(searchEntries(mixed, "/home/agent/Desktop", "read").map((entry) => entry.path)).toEqual([
+      "/home/agent/Desktop/readme.md",
+    ]);
+    expect(searchEntries(mixed, "/home/agent/project", "read")).toEqual([]);
   });
 
   it("creates conflict-safe target names", () => {

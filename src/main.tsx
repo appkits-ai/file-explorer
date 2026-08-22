@@ -196,8 +196,8 @@ function displayPath(locale: string | undefined, path: string): string {
 }
 
 /**
- * 用目录列表生成状态栏「N items in path」文案。
- * Builds the folder status copy from a directory listing.
+ * 用当前可见目录列表生成状态栏「N items in path」文案。
+ * Builds the folder status copy from the listing the user can currently see.
  */
 function folderItemsStatus(
   locale: string,
@@ -319,6 +319,7 @@ function App() {
   const entriesRef = React.useRef<ExplorerEntry[]>([]);
   const currentPathRef = React.useRef(currentPath);
   const loadedDirectoriesRef = React.useRef(loadedDirectories);
+  const showHiddenFilesRef = React.useRef(showHiddenFiles);
   const pendingLaunchSelectionRef = React.useRef<string | null>(null);
   const pendingCreateCommitRef = React.useRef(false);
   const contextMenuActionsRef = React.useRef(new Map<string, () => void>());
@@ -358,6 +359,10 @@ function App() {
   React.useEffect(() => {
     loadedDirectoriesRef.current = loadedDirectories;
   }, [loadedDirectories]);
+
+  React.useEffect(() => {
+    showHiddenFilesRef.current = showHiddenFiles;
+  }, [showHiddenFiles]);
 
   React.useEffect(() => {
     currentPathRef.current = currentPath;
@@ -432,7 +437,15 @@ function App() {
           next.add(targetDirectory);
           return next;
         });
-        setStatus(folderItemsStatus(locale, targetDirectory, listedEntries));
+        if (currentPathRef.current === targetDirectory) {
+          setStatus(
+            folderItemsStatus(
+              locale,
+              targetDirectory,
+              filterVisibleEntries(listedEntries, showHiddenFilesRef.current),
+            ),
+          );
+        }
       } catch (error) {
         if (
           isExplorerRefreshCancellation(
@@ -752,7 +765,9 @@ function App() {
       item("view-gallery", t(locale, "view.gallery"), "gallery", () => setViewMode("gallery"), {
         checked: viewMode === "gallery",
       }),
-      item("view-show-hidden-files", t(locale, "view.showHiddenFiles"), "eye", () => setShowHiddenFiles((current) => !current), {
+      item("view-show-hidden-files", t(locale, "view.showHiddenFiles"), "eye", () => {
+        setHiddenFilesVisible(!showHiddenFiles);
+      }, {
         checked: showHiddenFiles,
       }),
     ];
@@ -1064,10 +1079,29 @@ function App() {
         folderItemsStatus(
           locale,
           next,
-          childEntries(entriesRef.current, next, { showHiddenFiles: true }),
+          childEntries(entriesRef.current, next, {
+            showHiddenFiles: showHiddenFilesRef.current,
+          }),
         ),
       );
     }
+  }
+
+  /**
+   * 切换隐藏项可见性时同步状态栏计数，避免 Home 把点目录算进可见列表。
+   * Keeps the status count on the visible listing when hidden files are toggled.
+   */
+  function setHiddenFilesVisible(next: boolean) {
+    setShowHiddenFiles(next);
+    const directory = currentPathRef.current;
+    if (!loadedDirectoriesRef.current.has(directory)) return;
+    setStatus(
+      folderItemsStatus(
+        locale,
+        directory,
+        childEntries(entriesRef.current, directory, { showHiddenFiles: next }),
+      ),
+    );
   }
 
   function setSingleSelection(path: string | null) {

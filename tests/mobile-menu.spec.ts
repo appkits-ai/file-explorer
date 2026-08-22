@@ -190,7 +190,11 @@ describe("File Explorer mobile menu contracts", () => {
 
     expect(successPath).toContain("const listedEntries = result.entries.map");
     expect(successPath).toContain("next.add(targetDirectory)");
+    expect(successPath).toContain("currentPathRef.current === targetDirectory");
     expect(successPath).toContain(
+      "filterVisibleEntries(listedEntries, showHiddenFilesRef.current)",
+    );
+    expect(successPath).not.toContain(
       "folderItemsStatus(locale, targetDirectory, listedEntries)",
     );
     expect(successPath).not.toContain("notify(");
@@ -210,7 +214,11 @@ describe("File Explorer mobile menu contracts", () => {
     expect(navigate).toContain("loadedDirectoriesRef.current.has(next)");
     expect(navigate).toContain("folderItemsStatus(");
     expect(navigate).toContain("childEntries(entriesRef.current, next");
+    expect(navigate).toContain("showHiddenFiles: showHiddenFilesRef.current");
+    expect(navigate).not.toContain("showHiddenFiles: true");
     expect(source).toContain('t(locale, "status.folderItems"');
+    expect(source).toContain("function setHiddenFilesVisible(next: boolean)");
+    expect(source).toContain("setHiddenFilesVisible(!showHiddenFiles)");
   });
 
   it("materializes product Home directories before listing them", () => {

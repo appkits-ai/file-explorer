@@ -148,6 +148,15 @@ describe("File Explorer mobile menu contracts", () => {
     expect(source).toContain("requestUpload(menu.targetDirectory)");
     expect(source).toContain("onClick={() => requestUpload(currentPath)}");
     expect(source).toContain('className="file-picker"');
+    expect(source).toContain('id="explorer-upload"');
+    expect(source).toContain('name="explorer-upload"');
+    expect(source).toContain('aria-label={t(locale, "action.uploadFiles")}');
+    expect(source).toContain('id="explorer-path"');
+    expect(source).toContain('name="explorer-path"');
+    expect(source).toContain('aria-label={t(locale, "details.path")}');
+    expect(source).toContain('id="explorer-rename"');
+    expect(source).toContain('name="explorer-rename"');
+    expect(source).toContain('aria-label={t(locale, "action.rename")}');
     expect(source).not.toContain("\n        hidden\n");
   });
 
@@ -190,9 +199,41 @@ describe("File Explorer mobile menu contracts", () => {
 
     expect(successPath).toContain("const listedEntries = result.entries.map");
     expect(successPath).toContain("next.add(targetDirectory)");
-    expect(successPath).toContain('t(locale, "status.folderItems"');
+    expect(successPath).toContain("currentPathRef.current === targetDirectory");
+    expect(successPath).toContain(
+      "filterVisibleEntries(listedEntries, showHiddenFilesRef.current)",
+    );
+    expect(successPath).not.toContain(
+      "folderItemsStatus(locale, targetDirectory, listedEntries)",
+    );
     expect(successPath).not.toContain("notify(");
     expect(successPath).not.toContain("status.refreshFailed");
+  });
+
+  it("updates folder status when navigating to an already-loaded directory", () => {
+    const source = readSource("src/main.tsx");
+    const navigateStart = source.indexOf("function navigate(path: string)");
+    const navigateEnd = source.indexOf(
+      "function setSingleSelection",
+      navigateStart,
+    );
+    const navigate = source.slice(navigateStart, navigateEnd);
+
+    expect(navigateStart).toBeGreaterThan(-1);
+    expect(navigate).toContain("loadedDirectoriesRef.current.has(next)");
+    expect(navigate).toContain('setQuery("")');
+    expect(navigate).toContain("folderItemsStatus(");
+    expect(navigate).toContain("childEntries(entriesRef.current, next");
+    expect(navigate).toContain("showHiddenFiles: showHiddenFilesRef.current");
+    expect(navigate).not.toContain("showHiddenFiles: true");
+    expect(source).toContain('t(locale, "status.folderItems"');
+    expect(source).toContain('t(locale, "status.searchItems"');
+    expect(source).toContain("function setHiddenFilesVisible(next: boolean)");
+    expect(source).toContain("setHiddenFilesVisible(!showHiddenFiles)");
+    expect(source).toContain("function setSearchQuery(next: string)");
+    expect(source).toContain("id=\"explorer-search\"");
+    expect(source).toContain("name=\"explorer-search\"");
+    expect(source).toContain("setSearchQuery(event.target.value)");
   });
 
   it("materializes product Home directories before listing them", () => {
@@ -243,6 +284,13 @@ describe("File Explorer mobile menu contracts", () => {
       pasteInto.indexOf("await copyDirectory"),
     );
     expect(pasteInto).toContain("removeDirectoryChildren(");
+    expect(pasteInto).toContain(
+      "...planned.map(({ entry }) => parentPath(entry.path))",
+    );
+    expect(pasteInto).toContain(
+      "await Promise.all([...refreshTargets].map((path) => refresh(path)))",
+    );
+    expect(pasteInto).not.toMatch(/await refresh\(\);/);
     expect(finishRename).toContain(
       'explorerNoticeKey(error, "notify.renameFailed")',
     );

@@ -195,6 +195,33 @@ function displayPath(locale: string | undefined, path: string): string {
   return visiblePath(path);
 }
 
+/**
+ * 用当前可见目录列表生成状态栏「N items in path」文案。
+ * Builds the folder status copy from the listing the user can currently see.
+ */
+function folderItemsStatus(
+  locale: string,
+  directory: string,
+  listing: readonly ExplorerEntry[],
+): string {
+  return t(locale, "status.folderItems", {
+    count: listing.length,
+    path: displayPath(locale, directory),
+    plural: pluralSuffix(locale, listing.length),
+  });
+}
+
+/**
+ * 用当前文件夹搜索结果生成状态栏匹配计数。
+ * Builds the status copy from the current folder search matches.
+ */
+function searchItemsStatus(locale: string, listing: readonly ExplorerEntry[]): string {
+  return t(locale, "status.searchItems", {
+    count: listing.length,
+    plural: pluralSuffix(locale, listing.length),
+  });
+}
+
 
 function pathFromDisplayPath(locale: string | undefined, path: string): string {
   const trimmed = path.trim();
@@ -303,6 +330,7 @@ function App() {
   const entriesRef = React.useRef<ExplorerEntry[]>([]);
   const currentPathRef = React.useRef(currentPath);
   const loadedDirectoriesRef = React.useRef(loadedDirectories);
+  const showHiddenFilesRef = React.useRef(showHiddenFiles);
   const pendingLaunchSelectionRef = React.useRef<string | null>(null);
   const pendingCreateCommitRef = React.useRef(false);
   const contextMenuActionsRef = React.useRef(new Map<string, () => void>());
@@ -342,6 +370,10 @@ function App() {
   React.useEffect(() => {
     loadedDirectoriesRef.current = loadedDirectories;
   }, [loadedDirectories]);
+
+  React.useEffect(() => {
+    showHiddenFilesRef.current = showHiddenFiles;
+  }, [showHiddenFiles]);
 
   React.useEffect(() => {
     currentPathRef.current = currentPath;
@@ -416,13 +448,15 @@ function App() {
           next.add(targetDirectory);
           return next;
         });
-        setStatus(
-          t(locale, "status.folderItems", {
-            count: listedEntries.length,
-            path: displayPath(locale, targetDirectory),
-            plural: pluralSuffix(locale, listedEntries.length),
-          }),
-        );
+        if (currentPathRef.current === targetDirectory) {
+          setStatus(
+            folderItemsStatus(
+              locale,
+              targetDirectory,
+              filterVisibleEntries(listedEntries, showHiddenFilesRef.current),
+            ),
+          );
+        }
       } catch (error) {
         if (
           isExplorerRefreshCancellation(
@@ -742,7 +776,9 @@ function App() {
       item("view-gallery", t(locale, "view.gallery"), "gallery", () => setViewMode("gallery"), {
         checked: viewMode === "gallery",
       }),
-      item("view-show-hidden-files", t(locale, "view.showHiddenFiles"), "eye", () => setShowHiddenFiles((current) => !current), {
+      item("view-show-hidden-files", t(locale, "view.showHiddenFiles"), "eye", () => {
+        setHiddenFilesVisible(!showHiddenFiles);
+      }, {
         checked: showHiddenFiles,
       }),
     ];
@@ -1036,15 +1072,75 @@ function App() {
     });
   }
 
+  /**
+   * 进入目录；已缓存列表时立刻改状态栏，避免面包屑返回仍显示上一层文案。
+   * Enters a directory; a cached listing updates the status bar immediately so breadcrumb return does not keep the previous folder copy.
+   */
   function navigate(path: string) {
     const next = normalizePath(path);
     setPendingCreate(null);
     setRenamingPath(null);
+    setQuery("");
     markDirectoryLoading(next);
     setCurrentPath(next);
     setSelectedPaths([]);
     setActivePath(null);
     void appkits.contextMenu.close().catch(() => undefined);
+    if (loadedDirectoriesRef.current.has(next)) {
+      setStatus(
+        folderItemsStatus(
+          locale,
+          next,
+          childEntries(entriesRef.current, next, {
+            showHiddenFiles: showHiddenFilesRef.current,
+          }),
+        ),
+      );
+    }
+  }
+
+  /**
+   * 搜索只作用于当前目录子树，并让状态栏显示匹配数而不是整夹项目数。
+   * Searches only the current directory tree and shows the match count instead of the folder item count.
+   */
+  function setSearchQuery(next: string) {
+    setQuery(next);
+    if (next.trim()) {
+      setStatus(
+        searchItemsStatus(
+          locale,
+          searchEntries(visibleWorkspaceEntries, currentPath, next, {
+            showHiddenFiles,
+          }),
+        ),
+      );
+      return;
+    }
+    if (!loadedDirectoriesRef.current.has(currentPathRef.current)) return;
+    setStatus(
+      folderItemsStatus(
+        locale,
+        currentPath,
+        childEntries(entriesRef.current, currentPath, { showHiddenFiles }),
+      ),
+    );
+  }
+
+  /**
+   * 切换隐藏项可见性时同步状态栏计数，避免 Home 把点目录算进可见列表。
+   * Keeps the status count on the visible listing when hidden files are toggled.
+   */
+  function setHiddenFilesVisible(next: boolean) {
+    setShowHiddenFiles(next);
+    const directory = currentPathRef.current;
+    if (!loadedDirectoriesRef.current.has(directory)) return;
+    setStatus(
+      folderItemsStatus(
+        locale,
+        directory,
+        childEntries(entriesRef.current, directory, { showHiddenFiles: next }),
+      ),
+    );
   }
 
   function setSingleSelection(path: string | null) {
@@ -1338,6 +1434,10 @@ function App() {
     );
   }
 
+  /**
+   * 把剪贴板条目粘贴到目标目录；剪切时同时刷新源父目录，避免返回时仍显示旧行。
+   * Pastes clipboard entries into the target directory; cut also refreshes source parents so going back does not keep stale rows.
+   */
   async function pasteInto(targetDirectory: string) {
     if (!clipboard) return;
     let working = entriesRef.current;
@@ -1373,7 +1473,12 @@ function App() {
         if (clipboard.mode === "cut") await appkits.files.delete(entry.path);
       }
       if (clipboard.mode === "cut") setClipboard(null);
-      await refresh();
+      const refreshTargets = new Set([
+        currentPathRef.current,
+        normalizePath(targetDirectory),
+        ...planned.map(({ entry }) => parentPath(entry.path)),
+      ]);
+      await Promise.all([...refreshTargets].map((path) => refresh(path)));
       setStatus(t(locale, "status.pasteComplete"));
     } catch (error) {
       setEntries((current) =>
@@ -1728,9 +1833,12 @@ function App() {
     >
       <input
         ref={uploadRef}
+        id="explorer-upload"
+        name="explorer-upload"
         type="file"
         multiple
         className="file-picker"
+        aria-label={t(locale, "action.uploadFiles")}
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files || []);
           event.currentTarget.value = "";
@@ -1777,9 +1885,15 @@ function App() {
             <Images size={17} />
           </ToolbarButton>
         </div>
-        <label className="search">
+        <label className="search" htmlFor="explorer-search">
           <Search size={15} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t(locale, "placeholder.search")} />
+          <input
+            id="explorer-search"
+            name="explorer-search"
+            value={query}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={t(locale, "placeholder.search")}
+          />
         </label>
       </header>
 
@@ -1787,6 +1901,9 @@ function App() {
         {pathEditing ? (
           <input
             ref={pathInputRef}
+            id="explorer-path"
+            name="explorer-path"
+            aria-label={t(locale, "details.path")}
             value={pathEditorValue}
             onChange={(event) => setPathEditorValue(event.target.value)}
             onBlur={commitPathEditor}
@@ -1940,6 +2057,9 @@ function App() {
                     {renamingPath === entry.path ? (
                       <input
                         ref={renameInputRef}
+                        id="explorer-rename"
+                        name="explorer-rename"
+                        aria-label={t(locale, "action.rename")}
                         value={renameValue}
                         onChange={(event) => setRenameValue(event.target.value)}
                         onClick={(event) => event.stopPropagation()}
